@@ -1,0 +1,45 @@
+# GW150914 Einstein Toolkit 環境
+#
+# 起動方法:
+#   make docker-up      # バックグラウンド起動 (Jupyter Lab)
+#   make docker-shell   # コンテナ内 bash
+#   make docker-down    # 停止
+#
+# 設定は .env ファイルで上書き可 (.env.example を参照)。
+
+services:
+  et:
+    image: einsteintoolkit/jupyter-et:latest
+    container_name: gw150914-et
+
+    # OpenMPI のプロセス間通信で使う共有メモリ。
+    # デフォルト 64MB では不足しやすいため引き上げる。
+    shm_size: ${CONTAINER_SHM_SIZE:-4gb}
+
+    # CPUコアを物理コアに固定してNUMA的な安定性を確保。
+    # 本ホストは 16物理コア / 16スレッド。
+    cpuset: ${CONTAINER_CPUSET:-0-15}
+
+    # コンテナが使用できる最大メモリ。
+    mem_limit: ${CONTAINER_MEM_LIMIT:-80g}
+
+    # Jupyter Lab 公開ポート。
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+
+    volumes:
+      # プロジェクトルートをコンテナの作業ディレクトリにbind mount。
+      # パラメータファイル (par/) やスクリプトをホスト側から編集可能にする。
+      - ./:/home/jovyan/work
+
+      # シミュレーション出力はローカルSSD側に分離（NAS上のプロジェクトを避ける）。
+      # ${SIM_OUTPUT_DIR} 未設定時は ${HOME}/gw150914-output を使用。
+      - ${SIM_OUTPUT_DIR:-${HOME}/gw150914-output}:/home/jovyan/simulations
+
+    working_dir: /home/jovyan/work
+
+    stdin_open: true
+    tty: true
+
+    # コンテナ内のユーザーは jovyan (UID 1000) が標準。
+    # ホスト側のファイル所有権問題があれば user: 設定を追加する。
