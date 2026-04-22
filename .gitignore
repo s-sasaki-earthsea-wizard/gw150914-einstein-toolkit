@@ -4,3 +4,10 @@
 # .vscode
 .vscode
 
+# PDF files
+*.pdf
+
+# Claude files
+.claude
+.claude-notes
+.claude-screenshots
