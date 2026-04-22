@@ -11,3 +11,9 @@
 .claude
 .claude-notes
 .claude-screenshots
+
+# Environment variables
+.env
+
+# Simulation output (fallback directory when SIM_OUTPUT_DIR is not set to host SSD)
+simulations/
