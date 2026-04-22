@@ -75,16 +75,39 @@
 
 ## Phase 計画
 
-進捗管理用の大まかなマイルストーン。詳細は各Phase完了時にREADMEへ反映する。
+進捗管理用の大まかなマイルストーン。各PhaseはGitHub Issue で管理しており、
+詳細サブタスクはIssue内チェックリストを参照する。
 
-| Phase | 内容 | 状態 |
-| --- | --- | --- |
-| 0 | プロジェクト初期化・ドキュメント整備 | 進行中 |
-| 1 | Docker 環境構築（Einstein Toolkit ビルド） | 未着手 |
-| 2 | GW150914 パラメータファイル取得・N=16 へ調整 | 未着手 |
-| 3 | シミュレーション実行 | 未着手 |
-| 4 | 軌道・波形の抽出とプロット | 未着手 |
-| 5 | 3D 可視化（オプション） | 未着手 |
+| Phase | 内容 | Issue | 状態 |
+| --- | --- | --- | --- |
+| 0 | プロジェクト初期化・ドキュメント整備 | - | ✅ 完了 |
+| 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | 🛠️ 環境設定ファイル整備済 |
+| 2 | GW150914 パラメータファイル取得・N=16 調整 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | 未着手 |
+| 3 | シミュレーション実行 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
+| 4 | 軌道・波形の抽出とプロット | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
+| 5 | 3D 可視化（オプション） | [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5) | 未着手 |
+
+## 環境構築メモ (Phase 1)
+
+### MPI 実行戦略
+
+- シングルノード16コアのため、**Docker コンテナ内で MPI を完結**させる方針
+  （ホスト側MPI + 複数コンテナ構成は採用しない）
+- ベースイメージ: `einsteintoolkit/jupyter-et`（Einstein Toolkit + OpenMPI + Jupyter 同梱）
+
+### Docker起動時の重要オプション
+
+- `shm_size: 4gb` — OpenMPI のプロセス間通信用（デフォルト64MBでは不足）
+- `cpuset: 0-15` — 物理コアに固定（NUMA安定化）
+- `mem_limit: 80g` — ホスト93GiBのうち80GBをコンテナに割り当て
+- 出力先は `${SIM_OUTPUT_DIR}` でローカルSSDにbind mount（NASへの書き込みを避ける）
+
+### ファイル構成
+
+- `.env.example` / `.env` — 設定テンプレとユーザー固有設定（`.env`はgit管理外）
+- `docker-compose.yml` — サービス定義
+- `Makefile` + `makefiles/docker.mk` — `make docker-*` ターゲット群
+- 全ターゲットは `make help` で一覧取得可能
 
 ## 成果物の扱い
 
