@@ -69,8 +69,8 @@
 
 ### 実行環境
 
-- **Docker**: 環境分離（Einstein Toolkit 公式イメージまたは自前ビルド）
-- **MPI**: 並列実行
+- **Docker**: 環境分離（Ubuntu 20.04 ベースで Kruskal release を自前ビルド）
+- **MPI**: MPICH（公式 jupyter-et 構成準拠）
 - **可視化（後段）**: VisIt, Mathematica または Wolfram CDF Player
 
 ## Phase 計画
@@ -81,7 +81,7 @@
 | Phase | 内容 | Issue | 状態 |
 | --- | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | - | ✅ 完了 |
-| 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | 🛠️ 環境設定ファイル整備済 |
+| 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | ✅ 完了 (cactus_sim ビルド済、MPI 動作確認済) |
 | 2 | GW150914 パラメータファイル取得・N=16 調整 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | 未着手 |
 | 3 | シミュレーション実行 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
@@ -89,25 +89,70 @@
 
 ## 環境構築メモ (Phase 1)
 
+### Docker イメージ戦略
+
+- **方針**: Einstein Toolkit を **自前 Dockerfile でソースビルド**
+  - 既製イメージ `einsteintoolkit/jupyter-et` は Docker Hub に存在しない（誤った仮定だった）
+  - `ndslabs/jupyter-et` は実在するが全タグが 4 年以上前で Kruskal と乖離
+- **ベースイメージ**: `ubuntu:20.04`（公式 jupyter-et 準拠、Singularity 互換性のため）
+- **ETバージョン**: **Kruskal release = `ET_2025_05`**（リリース 2025-05-29）
+- **入手経路**: GetComponents (CRL) + thornlist 経由で公式 Bitbucket からチェックアウト
+- **ビルドツール**: SimFactory の `sim setup-silent` + `sim build`
+
 ### MPI 実行戦略
 
-- シングルノード16コアのため、**Docker コンテナ内で MPI を完結**させる方針
-  （ホスト側MPI + 複数コンテナ構成は採用しない）
-- ベースイメージ: `einsteintoolkit/jupyter-et`（Einstein Toolkit + OpenMPI + Jupyter 同梱）
+- シングルノード 16 コアのため、**Docker コンテナ内で MPI を完結**させる
+  （ホスト側 MPI + 複数コンテナ構成は採用しない）
+- **MPI 実装は MPICH**（OpenMPI ではない）
+  - 公式 jupyter-et の `base.docker` が MPICH (`libmpich-dev`, `libhdf5-mpich-dev`)
+    を採用しているため、互換性最優先で踏襲
+  - **注意**: Ubuntu の `libscalapack-mpi-dev` パッケージが Open MPI を依存に
+    引き込み、`update-alternatives` の auto モードでは Open MPI が選ばれる。
+    Dockerfile 末尾で `update-alternatives --set mpirun /usr/bin/mpirun.mpich`
+    に明示切替済み。`mpirun` でも `mpirun.mpich` でもどちらも MPICH が呼ばれる。
+  - HDF5 (`libhdf5_mpich.so.103`) や ADIOS2 は MPICH ABI でビルドされているため、
+    Open MPI で起動するとシンボル衝突や I/O 不整合のリスクあり
 
-### Docker起動時の重要オプション
+### Docker 起動時の重要オプション
 
-- `shm_size: 4gb` — OpenMPI のプロセス間通信用（デフォルト64MBでは不足）
-- `cpuset: 0-15` — 物理コアに固定（NUMA安定化）
-- `mem_limit: 80g` — ホスト93GiBのうち80GBをコンテナに割り当て
-- 出力先は `${SIM_OUTPUT_DIR}` でローカルSSDにbind mount（NASへの書き込みを避ける）
+- `shm_size: 4gb` — MPICH のプロセス間共有メモリ通信用（デフォルト 64MB では不足）
+- `cpuset: 0-15` — 物理コアに固定（NUMA 安定化）
+- `mem_limit: 80g` — ホスト 93GiB のうち 80GB をコンテナに割り当て
+- 出力先は `${SIM_OUTPUT_DIR}` でローカル SSD に bind mount（NAS への書き込みを避ける）
+- `USER_UID` / `USER_GID` は **ビルド時** に `--build-arg` で渡し、
+  コンテナ内 `etuser` UID をホストと一致させる（バインドマウント時のパーミッション一致）
+
+### Dockerfile に含む追加ライブラリ（公式 base.docker と同一）
+
+CarpetX 系を含めた完全構成:
+
+| ライブラリ | バージョン | 用途 |
+| --- | --- | --- |
+| CMake | 3.29.6 | AMReX 等のビルドに必須 |
+| ADIOS2 | 2.10.2 | 並列 I/O |
+| NSIMD | 3.0.1 | SIMD ベクトル化（SSE2） |
+| openPMD-api | 0.15.1 | AMR データレイアウト |
+| ssht | 1.5.1 | スピン荷重球面調和 |
+| Silo | 4.11 | 可視化用フォーマット |
+| yaml-cpp | 0.6.3 | YAML I/O |
+| AMReX | 23.05 | AMR バックエンド (CarpetX) |
+| Kuibit | 1.5.0 | Python 解析（pip） |
 
 ### ファイル構成
 
-- `.env.example` / `.env` — 設定テンプレとユーザー固有設定（`.env`はgit管理外）
-- `docker-compose.yml` — サービス定義
+- `Dockerfile` — Ubuntu 20.04 ベースの ET ビルドイメージ定義
+- `docker/cactus.cfg` — SimFactory 用ビルドオプション（公式 tutorial.cfg 踏襲）
+- `.dockerignore` — ビルドコンテキストから除外するパス
+- `.env.example` / `.env` — 設定テンプレとユーザー固有設定（`.env` は git 管理外）
+- `docker-compose.yml` — サービス定義（`build: .` で Dockerfile を使用）
 - `Makefile` + `makefiles/docker.mk` — `make docker-*` ターゲット群
 - 全ターゲットは `make help` で一覧取得可能
+
+### ビルド・実行コスト見積もり
+
+- 初回 `make docker-build`: **60〜120 分**（GetComponents + 並列コンパイル）
+- 再ビルド（レイヤーキャッシュ利用時）: 10〜20 分
+- 最終イメージサイズ: **5〜8 GB** 目安
 
 ## 成果物の扱い
 
