@@ -82,7 +82,7 @@
 | --- | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | - | ✅ 完了 |
 | 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | ✅ 完了 (cactus_sim ビルド済、MPI 動作確認済) |
-| 2 | GW150914 パラメータファイル取得・N=16 調整 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | 未着手 |
+| 2 | GW150914 パラメータファイル取得・N=16 調整 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | 🚧 進行中 (rpar 取得 + Level 1 テスト完成、Level 2 は再ビルド後に検証) |
 | 3 | シミュレーション実行 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
 | 5 | 3D 可視化（オプション） | [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5) | 未着手 |
@@ -153,6 +153,65 @@ CarpetX 系を含めた完全構成:
 - 初回 `make docker-build`: **60〜120 分**（GetComponents + 並列コンパイル）
 - 再ビルド（レイヤーキャッシュ利用時）: 10〜20 分
 - 最終イメージサイズ: **5〜8 GB** 目安
+
+## Phase 2 メモ (パラメータファイル取得・テスト基盤)
+
+### 外部データ管理
+
+- GW150914.rpar は **git 管理外**（上流 Einstein Toolkit 著作物の尊重）
+- `make fetch-parfile` が Bitbucket から取得、`.sha256` sidecar で整合性検証
+  - sha256 を Makefile 直書きすると秘密検知ツールの誤検知に当たりやすい → sidecar 方式
+- 取得物: `par/GW150914/GW150914.rpar` (gitignore)
+- 検証: `par/GW150914/GW150914.rpar.sha256`（git 管理、`sha256sum -c` で照合）
+
+### rpar の構造（重要）
+
+GW150914.rpar は **Python スクリプト** であり以下のパイプラインで `.par` を生成:
+
+1. `@N@` / `@SIMULATION_NAME@` / `@WALLTIME_HOURS@` の 3 プレースホルダを文字列置換
+2. `python3 <rpar>` 実行で同ディレクトリに `.par` 出力（出力名は `sys.argv[0]` から導出）
+3. 必要に応じて生成後 `.par` にパラメータ上書きを適用
+   - 例: Level 2 テストでは `Cactus::terminate = iteration` + `cctk_itlast = 0`
+
+### テスト戦略（Level 分離）
+
+| Level | Marker | 内容 | 時間 | 依存 |
+| --- | --- | --- | --- | --- |
+| 1 | `smoke` | rpar → par 生成パイプラインの純 Python テスト | < 1 秒 | Python のみ |
+| 2 | `short` | cactus_sim で TwoPunctures 初期データまで実行 | 約 7 分 | Docker + Cactus |
+| 3 (Phase 3) | - | 短時間時空進化（フィージビリティ本体） | 10〜30 分 | 同上 |
+
+- Level 1 はホストでも `make test-host-smoke` で動作（CI でも回せる設計）
+- Level 2 は `cactus_sim` / `mpirun` が無い環境で自動 skip
+- テストは常に `pytest tmp_path` で独立、`simulations/` 本番出力を汚染しない
+- Level 2 実測 (2026-04-24): N=28 + cctk_itlast=0 + nproc=1 で **6 分 18 秒**
+
+### rpar のグリッド構造と N の関係 (重要)
+
+公式 rpar の grid structure は **N=28 前提で設計**されている。
+
+- `maxrls = 9` 固定、refinement level 数 `rlsp = rlsm = 7` は N に非依存
+- Refinement level 1 の box サイズ (≈21.27 M) は N=28 での Thornburg04
+  内部 Cartesian パッチ内に完全に収まるよう調整されている
+- **N<28 では Carpet buffer zone が物理単位で拡大**し、level 1 box が
+  angular patch に食い込む → Interpolate2 が inter-patch 境界を
+  検出して Cactus::Abort（2026-04-24 に N=8/16 で crash 確認）
+
+### Phase 3 への申し送り (N=16 実行に向けて)
+
+Issue #2 の当初目標「N=16 で計算」を達成するには rpar の grid 改変が必要:
+
+- 候補 A: `maxrls` を 8 以下に下げる（level 1 の box サイズが縮小）
+- 候補 B: `sphere_inner_radius` の N 依存丸めを調整
+- 候補 C: `levelsp`/`levelsm` の最外層サイズに上限を設ける
+
+原本 rpar は改変せず、`apply_overrides` 機構か `@MAXRLS@` 追加プレースホルダで対応するのが素直。
+
+### Python 依存管理
+
+- `requirements.txt` で一元管理（本 Phase で Dockerfile から分離）
+- バージョン変更は `requirements.txt` のみ編集 → `make docker-rebuild`
+- pytest は test 依存だが runtime 共存で問題なし（コンテナは dev 兼 run 兼用）
 
 ## 成果物の扱い
 
