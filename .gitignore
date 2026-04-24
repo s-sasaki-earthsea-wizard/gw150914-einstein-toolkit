@@ -17,3 +17,8 @@
 
 # Simulation output (fallback directory when SIM_OUTPUT_DIR is not set to host SSD)
 simulations/
+
+# Einstein Toolkit 公式パラメータファイル（ライセンスは上流に従う、make fetch-parfile で取得）
+par/GW150914/*.rpar
+par/GW150914/*.par
+par/GW150914/generated/

@@ -7,6 +7,7 @@
 
 # サブMakefileを自動インクルード。
 include makefiles/docker.mk
+include makefiles/data.mk
 
 .PHONY: help
 help: ## このヘルプを表示
