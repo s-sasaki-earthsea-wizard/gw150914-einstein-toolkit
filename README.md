@@ -111,15 +111,35 @@ make help           # 全ターゲット一覧
 
 ## 使い方
 
-### パラメータファイル取得 (Phase 2)
+### パラメータファイル取得
 
-公式の GW150914 パラメータファイルは**リポジトリには含まれない**（上流の
-Einstein Toolkit 著作物のため）。以下のコマンドで Bitbucket から取得する:
+公式の Einstein Toolkit 配布 parfile は **いずれもリポジトリには含めない**
+（上流 ET 著作物の尊重）。以下のコマンドで Bitbucket から取得する:
 
 ```bash
+# GW150914 本体 (Phase 3b/3c 用)
 make fetch-parfile    # 公式 rpar を取得 + sha256 sidecar で整合性検証
 make verify-parfile   # 既取得ファイルの sha256 のみ確認
+
+# qc0-mclachlan (Phase 3a feasibility 用、等質量・無スピン軽量 BBH)
+make fetch-qc0        # qc0-mclachlan.par を取得 + sha256 検証
+make verify-qc0       # 既取得ファイルの sha256 のみ確認
 ```
+
+### qc0-mclachlan smoke 実行 (Phase 3a)
+
+GW150914 grid 改変 (Phase 3b) の前に、ET 本体の動作を qc0-mclachlan.par
+(等質量・無スピン軽量 BBH) で検証する:
+
+```bash
+make qc0-smoke-parfile  # overrides 適用して smoke 用 par を生成
+make run-qc0-smoke      # np=SIM_MPI_PROCS × OMP=SIM_OMP_THREADS で実行
+```
+
+- 並列度は `.env` の `SIM_MPI_PROCS` / `SIM_OMP_THREADS` で制御
+  (推奨値と背景は `.env.example` 参照)
+- smoke は `cctk_itlast=10` で終了、wall time は 16 コア環境で約 30 分
+- 出力は `${SIM_OUTPUT_DIR}/qc0-mclachlan-smoke/`、ログは `_logs/`
 
 ### テスト
 
@@ -156,8 +176,10 @@ make plot
 | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | ✅ 完了 |
 | 1 | Docker 環境構築 ([#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1)) | ✅ 完了 |
-| 2 | GW150914 パラメータファイル取得・N=16 調整 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | 🚧 進行中 (rpar 取得 + Level 1 テスト完成) |
-| 3 | シミュレーション実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 2 | GW150914 パラメータファイル取得・テスト基盤 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | ✅ 完了 |
+| 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | 🚧 進行中 |
+| 3b | GW150914 rpar の grid 改変 (N=16 対応) ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | 未着手 |
+| 3c | GW150914 本番実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
 

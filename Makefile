@@ -9,6 +9,7 @@
 include makefiles/docker.mk
 include makefiles/data.mk
 include makefiles/test.mk
+include makefiles/sim.mk
 
 .PHONY: help
 help: ## このヘルプを表示
