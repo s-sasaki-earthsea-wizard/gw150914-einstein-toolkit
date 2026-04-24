@@ -82,10 +82,17 @@
 | --- | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | - | ✅ 完了 |
 | 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | ✅ 完了 (cactus_sim ビルド済、MPI 動作確認済) |
-| 2 | GW150914 パラメータファイル取得・N=16 調整 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | 🚧 進行中 (rpar 取得 + Level 1 テスト完成、Level 2 は再ビルド後に検証) |
-| 3 | シミュレーション実行 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
+| 2 | GW150914 パラメータファイル取得・テスト基盤 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | ✅ 完了 (rpar 取得 + Level 1/2 テスト、N=28 で TwoPunctures 6 分 18 秒) |
+| 3a | qc0-mclachlan.par による ET feasibility 確認 | [#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10) | 🚧 進行中 |
+| 3b | GW150914 rpar の grid 改変 (N=16 対応) | [#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9) | 未着手 |
+| 3c | GW150914 本番実行 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
 | 5 | 3D 可視化（オプション） | [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5) | 未着手 |
+
+**Phase 3 の分割方針**: 公式 GW150914.rpar は N=28 前提の grid 設計で N<28
+では crash する（Issue #9）。grid 改変と本番実行を同時に debug すると切り分けが
+困難なため、3a で ET 本体の feasibility（infra 問題の有無）を qc0-mclachlan で
+先に保証してから、3b で GW150914 grid 改変、3c で本番、という順で進める。
 
 ## 環境構築メモ (Phase 1)
 

@@ -111,14 +111,19 @@ make help           # 全ターゲット一覧
 
 ## 使い方
 
-### パラメータファイル取得 (Phase 2)
+### パラメータファイル取得
 
-公式の GW150914 パラメータファイルは**リポジトリには含まれない**（上流の
-Einstein Toolkit 著作物のため）。以下のコマンドで Bitbucket から取得する:
+公式の Einstein Toolkit 配布 parfile は **いずれもリポジトリには含めない**
+（上流 ET 著作物の尊重）。以下のコマンドで Bitbucket から取得する:
 
 ```bash
+# GW150914 本体 (Phase 3b/3c 用)
 make fetch-parfile    # 公式 rpar を取得 + sha256 sidecar で整合性検証
 make verify-parfile   # 既取得ファイルの sha256 のみ確認
+
+# qc0-mclachlan (Phase 3a feasibility 用、等質量・無スピン軽量 BBH)
+make fetch-qc0        # qc0-mclachlan.par を取得 + sha256 検証
+make verify-qc0       # 既取得ファイルの sha256 のみ確認
 ```
 
 ### テスト
@@ -156,8 +161,10 @@ make plot
 | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | ✅ 完了 |
 | 1 | Docker 環境構築 ([#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1)) | ✅ 完了 |
-| 2 | GW150914 パラメータファイル取得・N=16 調整 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | 🚧 進行中 (rpar 取得 + Level 1 テスト完成) |
-| 3 | シミュレーション実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 2 | GW150914 パラメータファイル取得・テスト基盤 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | ✅ 完了 |
+| 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | 🚧 進行中 |
+| 3b | GW150914 rpar の grid 改変 (N=16 対応) ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | 未着手 |
+| 3c | GW150914 本番実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
 
