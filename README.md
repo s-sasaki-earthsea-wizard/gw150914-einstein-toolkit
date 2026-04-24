@@ -1,55 +1,147 @@
-# プロジェクト名
-プロジェクト名を書いてください。
+# GW150914 Einstein Toolkit Simulation
+
+Einstein Toolkit を用いた、重力波イベント **GW150914**（連星ブラックホール合体）
+の数値相対論シミュレーションプロジェクト。
 
 ## 概要
-プロジェクトの概要を書いてください。
+
+2015年9月14日 09:51 UTC に LIGO が初めて直接検出した重力波イベント GW150914 を、
+[Einstein Toolkit](https://einsteintoolkit.org/) で再現することを目的とする。
+
+- **イベント**: 36 + 29 太陽質量の連星ブラックホール合体 → 62 太陽質量の残留BH
+  （3 太陽質量分が重力波として放出）
+- **論文**: [Phys. Rev. Lett. 116, 061102](http://dx.doi.org/10.1103/PhysRevLett.116.061102)
+- **LIGO公式データ**: <https://losc.ligo.org/events/GW150914/>
+- **本プロジェクトが参照する公式ギャラリー**:
+  <https://einsteintoolkit.org/gallery/bbh/index.html>
+
+### 方針
+
+本プロジェクトは研究目的ではなく、**有名な重力波イベントを試しに計算してみる**
+ことを主眼としている。そのため、以下の妥協を行う：
+
+- 公式ギャラリーの解像度 `N=28` を `N=16` 程度に落として実行
+  （精度は犠牲、軌道・波形の定性的な再現を狙う）
+- 環境構築は Docker で行い、ホスト環境を汚さない
+
+## 物理パラメータ
+
+| 項目 | 値 |
+| --- | --- |
+| 初期分離 D | 10 M |
+| 質量比 q = m₁/m₂ | 36/29 ≈ 1.24 |
+| スピン χ₁ | 0.31 |
+| スピン χ₂ | -0.46 |
+
+### 公式ギャラリーの期待値
+
+| 項目 | 値 |
+| --- | --- |
+| 軌道数 | 6 |
+| マージャーまでの時間 | 899 M |
+| 最終BH質量 | 0.95 M |
+| 最終BHスピン（無次元） | 0.69 |
 
 ## 開発環境
-開発環境について書きます。以下が例です。
 
-- OS: Ubuntu-18.04 (AWS EC2 instance xrdp01-gui)
-- Python: 3.8.6
+- OS: Linux (Ubuntu 系想定)
+- コンテナ: Docker (ベースイメージは自前ビルド、Ubuntu 20.04)
+- Einstein Toolkit: **Kruskal release (`ET_2025_05`)** をソースビルド
+- MPI 実装: **MPICH**（公式 jupyter-et 構成準拠）
+
+> 詳細な要求リソース・実行時間は Phase 1 動作確認後に追記する。
+
+## 前提
+
+- Linux ホスト (Ubuntu 24.04 等)
+- Docker 29.x 以降 + Docker Compose v2 以降
+- 16 CPU コア / 93 GiB RAM / SSD 空き **150 GB 以上推奨**
+  （イメージ 5〜8 GB + ビルド中間生成物 + 出力データ）
+- ホストユーザが `docker` グループに所属している（`sudo` なしで `docker` 実行可能）
 
 ## インストール方法
-インストール方法を書いてください。
-以下のようなコマンドを書くなどすると手順がわかりやすくなるでしょう。
 
+### 1. 環境設定ファイルの準備
+
+```bash
+# .env.example を .env にコピーして調整（出力先・UID 等）
+cp .env.example .env
+$EDITOR .env
 ```
-make install
+
+主な設定項目:
+
+| 変数 | 意味 | デフォルト |
+| --- | --- | --- |
+| `SIM_OUTPUT_DIR` | シミュレーション出力先（ローカル SSD 推奨） | `${HOME}/gw150914-output` |
+| `JUPYTER_PORT` | Jupyter Lab 公開ポート | `8888` |
+| `CONTAINER_CPUSET` | 固定する物理 CPU コア範囲 | `0-15` |
+| `CONTAINER_MEM_LIMIT` | コンテナ最大メモリ | `80g` |
+| `CONTAINER_SHM_SIZE` | 共有メモリ（MPICH 通信用） | `4gb` |
+| `USER_UID` / `USER_GID` | コンテナ内 etuser の UID/GID（ホストと一致させる） | `1000` / `1000` |
+| `MAKE_PARALLEL` | Cactus ビルド時の `make -j` 並列度 | `8` |
+
+### 2. Docker イメージのビルド
+
+⚠️ **初回ビルドは 60〜120 分かかります**（Einstein Toolkit Kruskal release を
+ソースからビルドし、AMReX / ADIOS2 等の追加ライブラリも含めるため）。
+
+```bash
+make docker-build      # ホスト UID/GID は自動検出される
+```
+
+`make docker-rebuild` でキャッシュ無視の再ビルドも可能。
+
+### 3. コンテナの起動
+
+```bash
+make docker-up      # バックグラウンド起動
+make docker-token   # Jupyter Lab のアクセス URL(トークン付) を取得
+```
+
+その他の管理コマンド:
+
+```bash
+make docker-shell   # コンテナ内 bash
+make docker-logs    # ログをフォロー
+make docker-check   # mpirun / sim / cactus_sim / 主要 thorn の存在確認
+make docker-down    # 停止・削除
+make help           # 全ターゲット一覧
 ```
 
 ## 使い方
-実行方法やチュートリアルを書いてください。
-必要に応じてスクリーンショットや動画を使ってください。
 
-## その他
-必要なことがあれば書いてください。
+Phase 3（シミュレーション実行）までの整備完了後、ここに手順を追記する。
+暫定的な想定は以下のとおり:
 
-_____
+```bash
+# GW150914 パラメータファイルで低解像度実行（予定）
+make simulate N=16
 
-# Project name
-Write the name of the project.
-
-## Overview
-Write an overview of the project.
-
-## Development environment
-Write about the development environment. The following is an example.
-
-- OS: Ubuntu-18.04 (AWS EC2 instance xrdp01-gui)
-- Python: 3.8.6
-
-## Installation
-Write down the installation procedure.
-Commands will be useful to make clear as:
-
-```
-make install
+# 軌道・波形のプロット（予定）
+make plot
 ```
 
-## Usage
-Write a running procedure or tutorial.
-Use screenshots and videos if necessary.
+## 進捗状況
 
-## Others
-Anything else, please write here.
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| 0 | プロジェクト初期化・ドキュメント整備 | ✅ 完了 |
+| 1 | Docker 環境構築 ([#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1)) | ✅ 完了 |
+| 2 | GW150914 パラメータファイル取得・N=16 調整 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | 未着手 |
+| 3 | シミュレーション実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 4 | 軌道・波形の抽出とプロット ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
+| 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
+
+## 参考資料
+
+- Einstein Toolkit BBH Gallery: <https://einsteintoolkit.org/gallery/bbh/index.html>
+- `docs/Binary Black Hole.pdf`: 上記ページのPDF版（リポジトリ外、gitignore対象）
+- LIGO による発見論文: [Phys. Rev. Lett. 116, 061102](http://dx.doi.org/10.1103/PhysRevLett.116.061102)
+- LIGO 解析論文: <http://arxiv.org/abs/1602.03840>
+- GW150914 パラメータファイル:
+  <https://bitbucket.org/einsteintoolkit/einsteinexamples/raw/master/par/GW150914/GW150914.rpar>
+
+## ライセンス
+
+TBD

@@ -1,0 +1,53 @@
+# GW150914 Einstein Toolkit 環境
+# =================================================================
+# 起動方法:
+#   make docker-build   # 初回ビルド (60〜120分、Kruskal をソースビルド)
+#   make docker-up      # バックグラウンド起動 (Jupyter Lab)
+#   make docker-shell   # コンテナ内 bash
+#   make docker-down    # 停止
+#
+# 設定は .env ファイルで上書き可 (.env.example を参照)。
+
+services:
+  et:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # ホスト UID/GID と一致させてバインドマウント時のパーミッション問題を回避。
+        # Makefile の docker-build ターゲットは `id -u` / `id -g` を自動設定する。
+        USER_UID: ${USER_UID:-1000}
+        USER_GID: ${USER_GID:-1000}
+        # Cactus ビルド時の make 並列度。メモリ不足で gcc が OOM kill される
+        # 場合は下げる (16 GiB / 並列度 が概ね必要)。
+        MAKE_PARALLEL: ${MAKE_PARALLEL:-8}
+    image: gw150914-et:local
+    container_name: gw150914-et
+
+    # MPICH のプロセス間共有メモリ通信用。
+    # デフォルト 64MB ではプロセス数や AMR レベルが増えると不足するため引き上げる。
+    shm_size: ${CONTAINER_SHM_SIZE:-4gb}
+
+    # CPU を物理コアに固定 (NUMA 安定性確保)。本ホストは 16物理コア / 16スレッド。
+    cpuset: ${CONTAINER_CPUSET:-0-15}
+
+    # コンテナが使用できる最大メモリ。
+    mem_limit: ${CONTAINER_MEM_LIMIT:-80g}
+
+    # Jupyter Lab 公開ポート。
+    ports:
+      - "${JUPYTER_PORT:-8888}:8888"
+
+    volumes:
+      # プロジェクトルートをコンテナの作業ディレクトリにバインドマウント。
+      # パラメータファイル (par/) やノートブックをホスト側から編集可能にする。
+      - ./:/home/etuser/work
+
+      # シミュレーション出力はローカル SSD 側に分離（NAS 上のプロジェクトを避ける）。
+      # ${SIM_OUTPUT_DIR} 未設定時は ${HOME}/gw150914-output を使用。
+      - ${SIM_OUTPUT_DIR:-${HOME}/gw150914-output}:/home/etuser/simulations
+
+    working_dir: /home/etuser/work
+
+    stdin_open: true
+    tty: true
