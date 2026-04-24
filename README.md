@@ -126,6 +126,21 @@ make fetch-qc0        # qc0-mclachlan.par を取得 + sha256 検証
 make verify-qc0       # 既取得ファイルの sha256 のみ確認
 ```
 
+### qc0-mclachlan smoke 実行 (Phase 3a)
+
+GW150914 grid 改変 (Phase 3b) の前に、ET 本体の動作を qc0-mclachlan.par
+(等質量・無スピン軽量 BBH) で検証する:
+
+```bash
+make qc0-smoke-parfile  # overrides 適用して smoke 用 par を生成
+make run-qc0-smoke      # np=SIM_MPI_PROCS × OMP=SIM_OMP_THREADS で実行
+```
+
+- 並列度は `.env` の `SIM_MPI_PROCS` / `SIM_OMP_THREADS` で制御
+  (推奨値と背景は `.env.example` 参照)
+- smoke は `cctk_itlast=10` で終了、wall time は 16 コア環境で約 30 分
+- 出力は `${SIM_OUTPUT_DIR}/qc0-mclachlan-smoke/`、ログは `_logs/`
+
 ### テスト
 
 テストは 2 層構造で、marker で分離している:
