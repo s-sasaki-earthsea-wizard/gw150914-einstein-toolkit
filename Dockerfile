@@ -26,10 +26,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Einstein Toolkit Kruskal release
 ARG ET_RELEASE=ET_2025_05
 ENV ET_RELEASE=${ET_RELEASE}
-# Kuibit (波形解析用 Python ライブラリ)
-ARG KUIBIT_RELEASE=1.5.0
-ENV KUIBIT_RELEASE=${KUIBIT_RELEASE}
 # 公式準拠の Python バージョン
+# (Python パッケージのバージョンは requirements.txt で管理)
 ENV PYVER=3.8
 
 # ============================================================
@@ -72,21 +70,14 @@ RUN update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10 && \
     update-alternatives --install /usr/bin/gfortran gfortran /usr/bin/gfortran-10 10
 
 # ============================================================
-# Python 環境 (Jupyter Lab + 解析ライブラリ)
-# 公式は jupyterhub も含むが、本プロジェクトはシングルユーザー想定なので除外
+# Python 環境 (Jupyter Lab + 解析ライブラリ + テスト)
+# 依存パッケージは requirements.txt で一元管理する。
+# 公式は jupyterhub も含むが、本プロジェクトはシングルユーザー想定なので除外。
 # ============================================================
+COPY requirements.txt /tmp/requirements.txt
 RUN pip3 install --no-cache-dir pip==22.2.2 && \
-    pip3 install --no-cache-dir \
-        jupyterlab \
-        notebook \
-        matplotlib \
-        numpy \
-        scipy \
-        h5py \
-        sympy \
-        kuibit==${KUIBIT_RELEASE} \
-        dumb-init && \
-    rm -rf /root/.cache/pip*
+    pip3 install --no-cache-dir -r /tmp/requirements.txt && \
+    rm -rf /root/.cache/pip* /tmp/requirements.txt
 
 # ============================================================
 # CarpetX 系拡張ライブラリ (公式 base.docker 順序を踏襲)

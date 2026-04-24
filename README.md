@@ -111,7 +111,35 @@ make help           # 全ターゲット一覧
 
 ## 使い方
 
-Phase 3（シミュレーション実行）までの整備完了後、ここに手順を追記する。
+### パラメータファイル取得 (Phase 2)
+
+公式の GW150914 パラメータファイルは**リポジトリには含まれない**（上流の
+Einstein Toolkit 著作物のため）。以下のコマンドで Bitbucket から取得する:
+
+```bash
+make fetch-parfile    # 公式 rpar を取得 + sha256 sidecar で整合性検証
+make verify-parfile   # 既取得ファイルの sha256 のみ確認
+```
+
+### テスト
+
+テストは 2 層構造で、marker で分離している:
+
+| Level | Marker | 内容 | 実行時間 | 依存 |
+| --- | --- | --- | --- | --- |
+| 1 | `smoke` | rpar → par 生成パイプラインの純 Python テスト | < 1 秒 | Python のみ |
+| 2 | `short` | cactus_sim で TwoPunctures 初期データまで実行 | 約 7 分 | Docker + Cactus |
+
+```bash
+make test-host-smoke  # ホスト python3 で Level 1 のみ（Docker 不要）
+make test-smoke       # コンテナ内で Level 1
+make test-short       # コンテナ内で Level 1+2
+make test-all         # 全テスト
+```
+
+### シミュレーション実行
+
+Phase 3（本番実行）までの整備完了後、ここに手順を追記する。
 暫定的な想定は以下のとおり:
 
 ```bash
@@ -128,7 +156,7 @@ make plot
 | --- | --- | --- |
 | 0 | プロジェクト初期化・ドキュメント整備 | ✅ 完了 |
 | 1 | Docker 環境構築 ([#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1)) | ✅ 完了 |
-| 2 | GW150914 パラメータファイル取得・N=16 調整 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | 未着手 |
+| 2 | GW150914 パラメータファイル取得・N=16 調整 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | 🚧 進行中 (rpar 取得 + Level 1 テスト完成) |
 | 3 | シミュレーション実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |

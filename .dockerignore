@@ -27,3 +27,10 @@ docs/
 
 # Docker / Compose 自体 (ビルド対象ではないため除外)
 docker-compose.yml
+
+# Makefile / テスト / パラメータは実行時にバインドマウントされる
+Makefile
+makefiles/
+tests/
+par/
+README.md

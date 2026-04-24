@@ -1,0 +1,24 @@
+# Python 依存関係（コンテナ内 Jupyter Lab + 解析 + テスト）
+# ---------------------------------------------------------
+# 本ファイルは Docker イメージのビルド時に pip install -r で読み込まれる。
+# バージョン更新はこのファイルのみを編集し、make docker-rebuild で反映する。
+
+# Jupyter 環境（notebook 実行用）
+jupyterlab
+notebook
+
+# 数値・可視化
+matplotlib
+numpy
+scipy
+h5py
+sympy
+
+# Einstein Toolkit 出力解析
+kuibit==1.5.0
+
+# コンテナエントリポイント (PID 1 としてシグナル伝搬)
+dumb-init
+
+# テストフレームワーク (Phase 2 以降のユニット/スモークテスト)
+pytest
