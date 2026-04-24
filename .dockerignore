@@ -1,0 +1,29 @@
+# Docker ビルドコンテキストから除外するファイル
+# =================================================================
+# Dockerfile が必要とするのは Dockerfile 自身と docker/ ディレクトリのみ。
+# それ以外のファイルはコンテキストに含めないことでビルドを軽量化する。
+
+# Git メタデータ
+.git/
+.gitignore
+.github/
+
+# Claude Code 関連の作業記録
+.claude/
+.claude-notes/
+.claude-screenshots/
+
+# ローカル環境変数 / 実行時生成物
+.env
+simulations/
+
+# 参考資料 (PDF はサイズが大きいため除外)
+docs/
+*.pdf
+
+# OS / エディタ
+.DS_Store
+.vscode/
+
+# Docker / Compose 自体 (ビルド対象ではないため除外)
+docker-compose.yml
