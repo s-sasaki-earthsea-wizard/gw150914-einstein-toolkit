@@ -141,6 +141,25 @@ make run-qc0-smoke      # np=SIM_MPI_PROCS × OMP=SIM_OMP_THREADS で実行
 - smoke は `cctk_itlast=10` で終了、wall time は 16 コア環境で約 30 分
 - 出力は `${SIM_OUTPUT_DIR}/qc0-mclachlan-smoke/`、ログは `_logs/`
 
+### GW150914 N=16 feasibility 実行 (Phase 3b-ii)
+
+公式 rpar は N=28 前提で grid 構造が固定されているため、N=16 で動かす
+には `Coordinates::sphere_inner_radius` を拡大する必要がある (詳細は
+Issue #9 と CLAUDE.md の Phase 3b-ii メモ参照):
+
+```bash
+# default: SIM_N16_INNER_RADIUS=77.14 (snap で 77.10 M に補正)
+#          SIM_N16_MAXRLS=未設定 (rpar 原本の 9 を使用)
+make run-gw150914-n16-feasibility \
+    SIM_MPI_PROCS=1 SIM_OMP_THREADS=16 SIM_ITLAST=16
+```
+
+実測 (np=1 × OMP=16, evolve 16 iter):
+- wall time 4m27s, peak mem 21 GiB, **1.84 sec/iter**
+- フル run 見積もり: 900 M (マージャー) で **5.1 日**, 1000 M で 5.7 日
+- 30 分 timeout (`SIM_RUN_TIMEOUT`) で OOM ハング (Phase 3b-i で 297 分
+  ハングを実測) を防止
+
 ### テスト
 
 テストは 2 層構造で、marker で分離している:
@@ -179,7 +198,7 @@ make plot
 | 2 | GW150914 パラメータファイル取得・テスト基盤 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | ✅ 完了 |
 | 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | ✅ 完了 |
 | 3b-i | N=28 メモリ/時間 feasibility 計測 | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み) |
-| 3b-ii | N=16 対応 rpar grid 改変 ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | 未着手 |
+| 3b-ii | N=16 対応 rpar grid 改変 ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | ✅ 完了 (sphere_inner_radius 拡大で 1.84 sec/iter, 21 GiB, ringdown ~5.7 日見込み) |
 | 3c | GW150914 本番実行 (N=16) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット + Zenodo N=28 比較 ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |

@@ -84,8 +84,8 @@
 | 1 | Docker 環境構築 | [#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1) | ✅ 完了 (cactus_sim ビルド済、MPI 動作確認済) |
 | 2 | GW150914 パラメータファイル取得・テスト基盤 | [#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2) | ✅ 完了 (rpar 取得 + Level 1/2 テスト、N=28 で TwoPunctures 6 分 18 秒) |
 | 3a | qc0-mclachlan.par による ET feasibility 確認 | [#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10) | ✅ 完了 (smoke 26 分で完走、make ターゲット化済) |
-| 3b-i | N=28 メモリ/時間 feasibility 計測 | (本 PR) | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み → N=16 方針へ転換) |
-| 3b-ii | N=16 対応の rpar grid 改変 | [#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9) | 未着手 |
+| 3b-i | N=28 メモリ/時間 feasibility 計測 | - | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み → N=16 方針へ転換) |
+| 3b-ii | N=16 対応の rpar grid 改変 | [#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9) | ✅ 完了 (inner_radius 拡大で 1.84 sec/iter, peak 21 GiB, ringdown ~5.7 日見込み) |
 | 3c | GW150914 本番実行 (N=16) | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット (+ Zenodo N=28 比較) | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
 | 5 | 3D 可視化（オプション） | [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5) | 未着手 |
@@ -318,6 +318,82 @@ Debian/Ubuntu で dash) では `Bad substitution` エラーで exit code が
 - `requirements.txt` で一元管理（本 Phase で Dockerfile から分離）
 - バージョン変更は `requirements.txt` のみ編集 → `make docker-rebuild`
 - pytest は test 依存だが runtime 共存で問題なし（コンテナは dev 兼 run 兼用）
+
+## Phase 3b-ii メモ (N=16 grid 改変, Issue #9)
+
+### 採用構成
+
+- **`Coordinates::sphere_inner_radius = 77.10 M`** (rpar 計算値 51.40 M を 1.5 倍)
+  - rpar 自然 step `i × h0 = 8.566 M` の 9 倍。`snap_inner_radius()` 自動 snap
+  - 半整数倍制約 (`Coordinates/patchsystem.cc:177`) を満たすため必須
+- **`Carpet::max_refinement_levels = 9`** (rpar 原本通り。AMR 階層は犠牲にしない)
+- **`np = 1, OMP = 16`** (Phase 3b-i と同じ、GW150914 で OOM 回避)
+
+### 真因の特定 (重要)
+
+事前仮説「`maxrls` 縮小で level-1 box を縮めれば inter-patch 境界に侵入
+しない」は**誤り**。実測で否定:
+
+| maxrls | rlsp/rlsm | 最外層 box | 結果 |
+| --- | --- | --- | --- |
+| 9 | 7 | 21.27 M | ❌ inter-patch crash |
+| 8 | 6 | 10.64 M | ❌ 同 crash |
+| 7 | 5 | 5.32 M | ❌ 同 crash |
+
+`Interpolate2/test.cc:77` の制約は「refinement level > 0 のグリッドが
+inter-patch 境界マーク (Sn>=0) を持つ点を 1 つでも含むと abort」。
+crash の真因は box 自体ではなく **Carpet の prolongation buffer +
+ghost zones が物理単位で広がり、境界領域に侵入する**こと。
+
+- N=28: h0 = 1.224 M → buffer 厚 ~6 M → sphere_inner=51.40 で OK
+- N=16: h0 = 2.143 M → buffer 厚 ~10.7 M (1.75 倍) → 同じ inner では侵入
+
+box を縮小しても buffer 自体は h0 に固定されるため効果なし。
+**inner Cartesian patch を物理的に拡大**するのが本質的解決策。
+
+### 実測値 (np=1 × OMP=16, sphere_inner_radius=77.10)
+
+| 試行 | wall time | peak mem | 完走 |
+| --- | --- | --- | --- |
+| TwoPunctures のみ (cctk_itlast=0) | **3m58s** | **19.4 GiB** | ✅ |
+| evolve 16 iter (cctk_itlast=16) | **4m27s** | **21.3 GiB** | ✅ |
+
+**evolve 単独 = 29s / 16 iter = 1.84 sec/iter** (N=28 の 2.8 比 34% 短縮)
+dt_it = 0.00375 M (N=28 の 0.00215 M の 1.75 倍 = 28/16)
+
+### N=16 full run wall time 見積もり (1.84 sec/iter ベース)
+
+| 目標 evolve | 物理イベント | 推定 iter 数 | wall time (16 コア) |
+| --- | --- | --- | --- |
+| 200 M | inspiral 初期 | ~53,000 | 1.1 日 |
+| 900 M | **マージャー到達** | ~239,000 | **5.1 日** |
+| 1000 M | + ringdown 数周期 | ~265,000 | **5.7 日** |
+| 1700 M | 公式フル | ~451,000 | 9.6 日 |
+
+ユーザ目標 (≤ 2 週間で ringdown まで届く) に対し 3 倍弱の余裕。
+リスク: マージャー直前に AMR 密集で sec/iter 悪化の可能性 → Phase 3c は
+**7 日 wall budget** で計画。
+
+### 重要な制約 (Phase 3c でも踏襲)
+
+1. **`Coordinates/patchsystem.cc:177` の半整数倍制約**:
+   `2 * sphere_inner_radius / h_cartesian` が整数 (誤差 1e-8 以内) で
+   ある必要があり、任意値を指定すると起動時即 MPI_ABORT。
+   `scripts/generate_gw150914_n16_parfile.py::snap_inner_radius()` で
+   `i × h0` 単位 (rpar 自然 step) に ceil-snap して回避。
+2. **`Interpolate2/test.cc:77` の inter-patch 境界制約**:
+   refinement level > 0 のグリッドが inter-patch 境界マーク (Sn>=0) を
+   持つ点を 1 つでも含むと abort。N=16 では sphere_inner_radius を
+   公式 51.40 M から 77.10 M 以上に拡大しないと必ず crash する。
+
+### Phase 3c への申し送り (本番 run に向けて)
+
+1. **checkpoint 戦略の決定** (Phase 3a でも未解決): HDF5 1.10.4 POSIX
+   lock 問題で複数 rank からの同時書き込みが失敗。np=1 構成なら問題
+   ないはずだが要確認。落ちた場合は CarpetIOHDF5 per-proc モード or
+   parallel HDF5 (MPI-IO) を試す。
+2. 最低 ringdown 100 M 込み (= 1000 M) を目標に N=16 本番 run 投入。
+3. Zenodo 10.5281/zenodo.155394 の N=28 reference データを Phase 4 で比較。
 
 ## 成果物の扱い
 
