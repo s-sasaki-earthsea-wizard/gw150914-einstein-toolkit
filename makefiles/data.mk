@@ -19,6 +19,14 @@ QC0_NAME         := qc0-mclachlan.par
 QC0_DEST         := $(QC0_DIR)/$(QC0_NAME)
 QC0_CHECKSUM     := $(QC0_DIR)/$(QC0_NAME).sha256
 
+# Zenodo 10.5281/zenodo.155394 — 公式 N=28 GW150914 診断データ (Phase 4 検証用)
+# Zenodo は MD5 のみ公開のため sha256 ではなく md5 sidecar を採用 (md5sum -c 互換)。
+ZENODO_N28_URL      := https://zenodo.org/api/records/155394/files/GW150914_28.tar.xz/content
+ZENODO_N28_DIR      := data/GW150914_N28_zenodo
+ZENODO_N28_NAME     := GW150914_28.tar.xz
+ZENODO_N28_DEST     := $(ZENODO_N28_DIR)/$(ZENODO_N28_NAME)
+ZENODO_N28_CHECKSUM := $(ZENODO_N28_DIR)/$(ZENODO_N28_NAME).md5
+
 .PHONY: fetch-parfile
 fetch-parfile: ## 公式 GW150914.rpar を Bitbucket から取得 + sha256 検証
 	@mkdir -p $(PARFILE_DIR)
@@ -64,3 +72,27 @@ verify-qc0: ## 取得済み qc0-mclachlan.par の sha256 検証 (sidecar ファ�
 	@test -f $(QC0_DEST) || (echo "par 未取得: make fetch-qc0 を先に実行してください" && exit 1)
 	@test -f $(QC0_CHECKSUM) || (echo "sha256 sidecar が見つかりません: $(QC0_CHECKSUM)" && exit 1)
 	@cd $(QC0_DIR) && sha256sum -c $(QC0_NAME).sha256
+
+.PHONY: fetch-zenodo-n28
+fetch-zenodo-n28: ## Phase 4 検証用 Zenodo N=28 公式診断データ (約 375 MB) を取得 + md5 検証
+	@mkdir -p $(ZENODO_N28_DIR)
+	@if [ -f $(ZENODO_N28_DEST) ]; then \
+		echo "既に存在します: $(ZENODO_N28_DEST) (再取得は make refetch-zenodo-n28)"; \
+	else \
+		echo "取得中: $(ZENODO_N28_URL)"; \
+		echo "(約 375 MB のため数分かかります)"; \
+		curl -fL -o $(ZENODO_N28_DEST) $(ZENODO_N28_URL); \
+		echo "取得完了: $(ZENODO_N28_DEST)"; \
+	fi
+	@$(MAKE) --no-print-directory verify-zenodo-n28
+
+.PHONY: refetch-zenodo-n28
+refetch-zenodo-n28: ## Zenodo N=28 アーカイブを削除して再取得
+	@rm -f $(ZENODO_N28_DEST)
+	@$(MAKE) --no-print-directory fetch-zenodo-n28
+
+.PHONY: verify-zenodo-n28
+verify-zenodo-n28: ## 取得済み Zenodo N=28 アーカイブの md5 検証 (sidecar ファイル利用)
+	@test -f $(ZENODO_N28_DEST) || (echo "アーカイブ未取得: make fetch-zenodo-n28 を先に実行してください" && exit 1)
+	@test -f $(ZENODO_N28_CHECKSUM) || (echo "md5 sidecar が見つかりません: $(ZENODO_N28_CHECKSUM)" && exit 1)
+	@cd $(ZENODO_N28_DIR) && md5sum -c $(ZENODO_N28_NAME).md5
