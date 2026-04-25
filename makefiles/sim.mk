@@ -46,6 +46,15 @@ SIM_CKPT_TIMEOUT ?= 8000
 SIM_CKPT_MODE    ?= write    # write | restart
 SIM_CKPT_ITLAST  ?=          # 空なら mode 既定値 (write=4000, restart=4500)
 
+# Phase 3c-2 以降の本番 run 用 (Issue #3 staged validation)。
+# Stage A は実測 0.89 sec/iter × 26,500 iter ≒ 6.6h。8h で安全マージン確保。
+SIM_STAGE_A_TIMEOUT ?= 28800   # 8 h
+SIM_STAGE_B_TIMEOUT ?= 244800  # 68 h (累計 ~75 h, restart 必須前提)
+SIM_STAGE_C_TIMEOUT ?= 432000  # 120 h (累計 ~135 h, restart 必須前提)
+GW_N16_STAGE_A_PAR  := par/GW150914/generated/gw150914-n16-stage-a.par
+GW_N16_STAGE_B_PAR  := par/GW150914/generated/gw150914-n16-stage-b.par
+GW_N16_STAGE_C_PAR  := par/GW150914/generated/gw150914-n16-stage-c.par
+
 .PHONY: qc0-smoke-parfile
 qc0-smoke-parfile: ## qc0 smoke 用 par を生成 (cctk_itlast=10, checkpoint 無効)
 	@test -f $(QC0_PARFILE) || (echo "qc0 parfile 未取得: make fetch-qc0 を先に実行" && exit 1)
@@ -199,6 +208,70 @@ run-gw150914-n16-checkpoint-test: gw150914-n16-checkpoint-test-parfile ## Phase 
 	echo "詳細は $$MEMLOG を参照"; \
 	if [ "$$RC" = "137" ] || [ "$$RC" = "124" ]; then \
 		echo "[警告] timeout ($(SIM_CKPT_TIMEOUT)s) に達して強制終了されました"; \
+	fi; \
+	exit $$RC
+
+.PHONY: gw150914-n16-stage-parfile
+gw150914-n16-stage-parfile: ## Phase 3c-2/3/4 stage parfile を生成 (SIM_STAGE=A|B|C)
+	@test -f $(GW_RPAR) || (echo "GW150914.rpar 未取得: make fetch-parfile を先に実行" && exit 1)
+	@test -n "$(SIM_STAGE)" || (echo "SIM_STAGE が未指定です (A|B|C)" && exit 1)
+	@$(COMPOSE) exec -T et python3 /home/etuser/work/scripts/generate_gw150914_n16_stage_parfile.py \
+		--stage $(SIM_STAGE)
+
+.PHONY: run-gw150914-n16-stage-a
+run-gw150914-n16-stage-a: ## Phase 3c-2 Stage A: 0 → 100 M N=16 本番 run (~6.6h, restart capable)
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=a STAGE_PAR=$(GW_N16_STAGE_A_PAR) STAGE_TIMEOUT=$(SIM_STAGE_A_TIMEOUT)
+
+.PHONY: run-gw150914-n16-stage-b
+run-gw150914-n16-stage-b: ## Phase 3c-3 Stage B: 100 → 1000 M (累計 ~2.7d, restart 前提)
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=b STAGE_PAR=$(GW_N16_STAGE_B_PAR) STAGE_TIMEOUT=$(SIM_STAGE_B_TIMEOUT)
+
+.PHONY: run-gw150914-n16-stage-c
+run-gw150914-n16-stage-c: ## Phase 3c-4 Stage C: 1000 → 1700 M (累計 ~4.7d, optional)
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=c STAGE_PAR=$(GW_N16_STAGE_C_PAR) STAGE_TIMEOUT=$(SIM_STAGE_C_TIMEOUT)
+
+# 内部実装: stage 共通の実行ロジック (parfile 生成 + mpirun + メモリログ)
+.PHONY: _run-gw150914-n16-stage
+_run-gw150914-n16-stage:
+	@echo "実行設定: N=16 Stage $(STAGE) np=$(SIM_MPI_PROCS) × OMP=$(SIM_OMP_THREADS) timeout=$(STAGE_TIMEOUT)s"
+	@$(MAKE) --no-print-directory gw150914-n16-stage-parfile SIM_STAGE=$(shell echo $(STAGE) | tr a-z A-Z)
+	@mkdir -p _logs
+	@TS=$$(date +%Y%m%d-%H%M%S); \
+	TAG="n16-stage-$(STAGE)-np$(SIM_MPI_PROCS)-omp$(SIM_OMP_THREADS)-$$TS"; \
+	LOG="_logs/gw150914-$$TAG.log"; \
+	MEMLOG="_logs/gw150914-mem-$$TAG.log"; \
+	echo "実行ログ: $$LOG"; \
+	echo "メモリログ: $$MEMLOG"; \
+	bash scripts/sample_container_memory.sh $(GW_CONTAINER_NAME) "$$MEMLOG" 30 & \
+	MEMPID=$$!; \
+	trap "kill $$MEMPID 2>/dev/null || true" EXIT INT TERM; \
+	set +e; \
+	$(COMPOSE) exec -T -w /home/etuser/simulations et bash -c '\
+		time timeout --signal=KILL $(STAGE_TIMEOUT) mpirun \
+			-np $(SIM_MPI_PROCS) \
+			-genv OMP_NUM_THREADS $(SIM_OMP_THREADS) \
+			-genv HDF5_USE_FILE_LOCKING FALSE \
+			$(CACTUS_SIM) \
+			/home/etuser/work/$(STAGE_PAR) \
+			2>&1' | tee "$$LOG"; \
+	RC=$${PIPESTATUS[0]}; \
+	kill $$MEMPID 2>/dev/null || true; \
+	wait $$MEMPID 2>/dev/null || true; \
+	echo ""; \
+	echo "=== メモリ使用量サマリ ==="; \
+	awk 'NR>1 && $$2 ~ /[GM]iB$$/ { \
+		v=$$2; unit=""; \
+		if (v ~ /GiB/) { sub(/GiB/,"",v); g=v+0 } \
+		else if (v ~ /MiB/) { sub(/MiB/,"",v); g=(v+0)/1024.0 } \
+		if (g>max) max=g \
+	} END { printf "peak container memory: %.2f GiB\n", max }' "$$MEMLOG"; \
+	echo "詳細は $$MEMLOG を参照"; \
+	if [ "$$RC" = "137" ] || [ "$$RC" = "124" ]; then \
+		echo "[警告] timeout ($(STAGE_TIMEOUT)s) に達して強制終了されました"; \
+		echo "        recover=autoprobe で再投入すれば最新 ckpt から続行可能"; \
 	fi; \
 	exit $$RC
 
