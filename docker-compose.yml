@@ -47,6 +47,13 @@ services:
       # ${SIM_OUTPUT_DIR} 未設定時は ${HOME}/gw150914-output を使用。
       - ${SIM_OUTPUT_DIR:-${HOME}/gw150914-output}:/home/etuser/simulations
 
+      # checkpoint 専用 bind mount (Phase 3c 以降)。rpar の
+      # ``IO::checkpoint_dir = "../checkpoints"`` (cwd /home/etuser/simulations
+      # からの相対) は /home/etuser/checkpoints に解決される。診断出力と
+      # 分離してホスト persistent にすることで、長時間 run の途中再開が
+      # 可能になる。${SIM_CHECKPOINT_DIR} 未設定時は ${HOME}/gw150914-checkpoints。
+      - ${SIM_CHECKPOINT_DIR:-${HOME}/gw150914-checkpoints}:/home/etuser/checkpoints
+
     working_dir: /home/etuser/work
 
     stdin_open: true
