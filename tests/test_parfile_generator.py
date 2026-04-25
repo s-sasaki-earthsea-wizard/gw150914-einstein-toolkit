@@ -17,6 +17,7 @@ from tests.helpers.parfile import (
     RPAR_SOURCE,
     apply_overrides,
     generate_par,
+    patch_constraint_outputs,
     patch_maxrls,
 )
 
@@ -400,3 +401,174 @@ def test_ckpt_keep_two_checkpoints(tmp_path) -> None:
     """checkpoint_keep=2 で 2 個保持される (ディスク制御)"""
     content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
     assert "IO::checkpoint_keep = 2" in content
+
+
+# ---------------------------------------------------------------------------
+# Issue #4 D3: patch_constraint_outputs (Hamiltonian/Momentum norm 出力)
+# ---------------------------------------------------------------------------
+
+
+def test_patch_constraint_outputs_adds_norm_reductions(tmp_path) -> None:
+    """patch_constraint_outputs で reductions に norm2 / norm_inf が追加される"""
+    par = generate_par(tmp_path, n=16, enable_constraint_output=True)
+    content = par.read_text(encoding="utf-8")
+    assert (
+        'IOScalar::outScalar_reductions          = "minimum maximum average norm2 norm_inf"'
+        in content
+    )
+
+
+def test_patch_constraint_outputs_adds_constraint_vars(tmp_path) -> None:
+    """ML_ADMConstraints::ML_Ham と ML_mom が outScalar_vars に含まれる"""
+    par = generate_par(tmp_path, n=16, enable_constraint_output=True)
+    content = par.read_text(encoding="utf-8")
+    # multi-line block 内に両変数が現れる
+    assert "ML_ADMConstraints::ML_Ham" in content
+    assert "ML_ADMConstraints::ML_mom" in content
+    # 既存の SystemStatistics::process_memory_mb は残す (メモリ計測継続)
+    assert "SystemStatistics::process_memory_mb" in content
+
+
+def test_patch_constraint_outputs_disabled_by_default(tmp_path) -> None:
+    """enable_constraint_output=False (デフォルト) では rpar 原本のまま
+
+    既存の N=16 feasibility / checkpoint test との後方互換性を保つ。
+    """
+    par = generate_par(tmp_path, n=16)
+    content = par.read_text(encoding="utf-8")
+    assert "ML_ADMConstraints::ML_Ham" not in content
+    assert "norm2 norm_inf" not in content
+
+
+def test_patch_constraint_outputs_function_directly() -> None:
+    """rpar text 単体に対して patch を当てた出力が期待通り"""
+    template = (
+        RPAR_SOURCE.read_text(encoding="utf-8")
+        .replace("@N@", "16")
+        .replace("@SIMULATION_NAME@", "test")
+        .replace("@WALLTIME_HOURS@", "1.0")
+    )
+    patched = patch_constraint_outputs(template)
+    # reductions に norm 系が追加される
+    assert '"minimum maximum average norm2 norm_inf"' in patched
+    # vars が multi-line 化される
+    import re as _re
+
+    block = _re.search(
+        r'IOScalar::outScalar_vars\s*=\s*"\n((?:.+\n)+?)"',
+        patched,
+    )
+    assert block is not None, "patch 後の outScalar_vars block が見つからない"
+    body = block.group(1)
+    assert "SystemStatistics::process_memory_mb" in body
+    assert "ML_ADMConstraints::ML_Ham" in body
+    assert "ML_ADMConstraints::ML_mom" in body
+
+
+def test_patch_constraint_outputs_idempotent_failure() -> None:
+    """同じ rpar に 2 回適用するとエラー (二度パッチで原本変更検知)"""
+    template = (
+        RPAR_SOURCE.read_text(encoding="utf-8")
+        .replace("@N@", "16")
+        .replace("@SIMULATION_NAME@", "test")
+        .replace("@WALLTIME_HOURS@", "1.0")
+    )
+    patched = patch_constraint_outputs(template)
+    with pytest.raises(ValueError, match="見つかりません"):
+        patch_constraint_outputs(patched)
+
+
+# ---------------------------------------------------------------------------
+# Issue #3 + #4 D1: stage parfile generator
+# ---------------------------------------------------------------------------
+
+_stage_spec = _importlib_util.spec_from_file_location(
+    "n16_stage_gen",
+    _ROOT / "scripts" / "generate_gw150914_n16_stage_parfile.py",
+)
+_n16_stage_gen = _importlib_util.module_from_spec(_stage_spec)
+_stage_spec.loader.exec_module(_n16_stage_gen)
+STAGE_FINAL_TIMES = _n16_stage_gen.STAGE_FINAL_TIMES
+stage_overrides = _n16_stage_gen.stage_overrides
+
+
+def _build_stage_par(tmp_path, stage: str) -> str:
+    """stage parfile generator と同等の overrides で par を生成し中身を返す."""
+    sim_name = f"test-stage-{stage.lower()}"
+    overrides = stage_overrides(stage, sim_name)
+    overrides["Coordinates::sphere_inner_radius"] = snap_inner_radius(77.14, n=16)
+    par = generate_par(
+        tmp_path,
+        n=16,
+        simulation_name=sim_name,
+        walltime_hours=8.0,
+        overrides=overrides,
+        enable_constraint_output=True,
+    )
+    return par.read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "stage,final_time", [("A", 100.0), ("B", 1000.0), ("C", 1700.0)]
+)
+def test_stage_final_time_is_set(tmp_path, stage: str, final_time: float) -> None:
+    """各 stage で cctk_final_time が想定値 (100/1000/1700 M) になる"""
+    content = _build_stage_par(tmp_path, stage)
+    assert f"Cactus::cctk_final_time                         = {final_time}" in content
+
+
+def test_stage_terminate_mode_is_time(tmp_path) -> None:
+    """terminate=time (rpar 原本通り、checkpoint test の iteration 上書きは継承しない)"""
+    content = _build_stage_par(tmp_path, "A")
+    # rpar 原本の terminate=time が保たれる、または override で再度 "time" 指定
+    assert 'Cactus::terminate                               = "time"' in content
+    assert 'Cactus::terminate                               = "iteration"' not in content
+
+
+def test_stage_recover_autoprobe(tmp_path) -> None:
+    """recover=autoprobe (既存 ckpt があれば recover、無ければ clean start)"""
+    content = _build_stage_par(tmp_path, "A")
+    assert 'IO::recover' in content and '= "autoprobe"' in content
+
+
+def test_stage_checkpoint_dir_separated_per_stage(tmp_path) -> None:
+    """checkpoint_dir が stage 別に分離される"""
+    content_a = _build_stage_par(tmp_path / "a", "A")
+    content_b = _build_stage_par(tmp_path / "b", "B")
+    assert '"../checkpoints/test-stage-a"' in content_a
+    assert '"../checkpoints/test-stage-b"' in content_b
+
+
+def test_stage_walltime_checkpoint_trigger_production_cadence(tmp_path) -> None:
+    """walltime checkpoint trigger は production cadence の 2.0 h"""
+    content = _build_stage_par(tmp_path, "A")
+    assert "IO::checkpoint_every_walltime_hours = 2.0" in content
+
+
+def test_stage_constraint_output_enabled(tmp_path) -> None:
+    """stage モードでは constraint 出力が必ず有効 (D3)"""
+    content = _build_stage_par(tmp_path, "A")
+    assert "ML_ADMConstraints::ML_Ham" in content
+    assert "norm2 norm_inf" in content
+
+
+def test_stage_overrides_rejects_unknown_stage() -> None:
+    """未知の stage 文字列は ValueError"""
+    with pytest.raises(ValueError, match="未知の stage"):
+        stage_overrides("Z", "test")
+
+
+def test_stage_no_cctk_itlast_set(tmp_path) -> None:
+    """stage モードでは cctk_itlast を上書きしない (final_time で打ち切り)
+
+    rpar 原本は terminate=time モードで運用するため ``Cactus::cctk_itlast``
+    を明示せず、Cactus デフォルト値に任せている。本 stage generator もそれを
+    踏襲し、cctk_itlast を一切設定しない。
+    """
+    content = _build_stage_par(tmp_path, "A")
+    import re as _re
+
+    matches = _re.findall(r"^Cactus::cctk_itlast\s*=", content, _re.MULTILINE)
+    assert len(matches) == 0, (
+        f"cctk_itlast が {len(matches)} 回現れる (0 を期待: stage では設定しない)"
+    )
