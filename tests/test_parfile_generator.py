@@ -294,3 +294,109 @@ def test_snap_inner_radius_works_for_various_n(n: int) -> None:
     r = snap_inner_radius(80.0, n=n)
     ratio = 2.0 * r / h_cart
     assert abs(ratio - round(ratio)) < 1e-8
+
+
+# ---------------------------------------------------------------------------
+# Issue #3 / Phase 3c-1: checkpoint test parfile (HDF5 POSIX lock 検証)
+# ---------------------------------------------------------------------------
+
+_ckpt_spec = _importlib_util.spec_from_file_location(
+    "n16_ckpt_gen",
+    _ROOT / "scripts" / "generate_gw150914_n16_checkpoint_test_parfile.py",
+)
+_n16_ckpt_gen = _importlib_util.module_from_spec(_ckpt_spec)
+_ckpt_spec.loader.exec_module(_n16_ckpt_gen)
+COMMON_OVERRIDES = _n16_ckpt_gen.COMMON_OVERRIDES
+WRITE_MODE_OVERRIDES = _n16_ckpt_gen.WRITE_MODE_OVERRIDES
+RESTART_MODE_OVERRIDES = _n16_ckpt_gen.RESTART_MODE_OVERRIDES
+
+
+def _build_ckpt_par(tmp_path, mode: str, itlast: int) -> str:
+    """checkpoint test スクリプトと同じ overrides で par を生成し中身を返す.
+
+    sub-process 起動を避けるため、スクリプトの構成定数を直接再利用する.
+    """
+    if mode == "write":
+        mode_ov = WRITE_MODE_OVERRIDES
+    elif mode == "restart":
+        mode_ov = RESTART_MODE_OVERRIDES
+    else:
+        raise ValueError(mode)
+
+    overrides = {
+        **COMMON_OVERRIDES,
+        **mode_ov,
+        "Cactus::cctk_itlast": itlast,
+        "Coordinates::sphere_inner_radius": snap_inner_radius(77.14, n=16),
+    }
+    par = generate_par(
+        tmp_path,
+        n=16,
+        simulation_name=f"ckpt-test-{mode}",
+        walltime_hours=3.0,
+        overrides=overrides,
+    )
+    return par.read_text(encoding="utf-8")
+
+
+def test_ckpt_write_mode_enables_checkpointing(tmp_path) -> None:
+    """write モード: clean start (recover=no) + walltime 0.5h + on_terminate"""
+    content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
+    assert 'IO::recover' in content and '= "no"' in content
+    assert "IO::checkpoint_every_walltime_hours" in content
+    # walltime トリガを 0.5h に設定 (Phase 3c-1 第 2 回試行で iter ~2000 時点
+    # で walltime 経路を発火させるため。1 回目では 2.0h で発火せず terminate
+    # 経路のみ検証されたため修正)
+    assert "= 0.5" in content
+    # on_terminate と CarpetIOHDF5::checkpoint が yes
+    assert "IO::checkpoint_on_terminate" in content
+    assert "CarpetIOHDF5::checkpoint" in content
+    # 旧 CarpetIOHDF5::checkpoint = yes 行と置換が両立する確認
+    assert "= yes" in content
+
+
+def test_ckpt_restart_mode_recovers_auto(tmp_path) -> None:
+    """restart モード: recover=auto + walltime trigger 無効化 + on_terminate のみ"""
+    content = _build_ckpt_par(tmp_path, mode="restart", itlast=4500)
+    assert 'IO::recover' in content and '= "auto"' in content
+    # restart で walltime トリガを無効化 (-1)
+    import re as _re
+
+    m = _re.search(r"IO::checkpoint_every_walltime_hours\s*=\s*(-?\d+(?:\.\d+)?)", content)
+    assert m is not None
+    assert float(m.group(1)) < 0.0
+    # on_terminate は依然有効
+    assert "IO::checkpoint_on_terminate" in content
+
+
+def test_ckpt_uses_separated_checkpoint_dir(tmp_path) -> None:
+    """checkpoint_dir / recover_dir が ../checkpoints/checkpoint-test (test 用 subdir)
+    に置かれる. ../checkpoints は docker-compose の SIM_CHECKPOINT_DIR
+    bind mount で host persistent
+    """
+    content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
+    assert 'IO::checkpoint_dir' in content
+    assert '"../checkpoints/checkpoint-test"' in content
+    assert 'IO::recover_dir' in content
+    assert '"../checkpoints/checkpoint-test"' in content
+
+
+def test_ckpt_write_mode_itlast_is_applied(tmp_path) -> None:
+    """cctk_itlast 上書きが反映される"""
+    content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
+    assert "Cactus::cctk_itlast = 4000" in content
+
+
+def test_ckpt_terminate_overridden_to_iteration(tmp_path) -> None:
+    """rpar 原本の terminate=time を iteration に置換 (cctk_itlast を効かせるため)"""
+    content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
+    # rpar 原本の "Cactus::terminate ... = time" 行は残らない
+    assert "Cactus::terminate                               = time" not in content
+    # 新しい値が反映
+    assert '"iteration"' in content
+
+
+def test_ckpt_keep_two_checkpoints(tmp_path) -> None:
+    """checkpoint_keep=2 で 2 個保持される (ディスク制御)"""
+    content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
+    assert "IO::checkpoint_keep = 2" in content

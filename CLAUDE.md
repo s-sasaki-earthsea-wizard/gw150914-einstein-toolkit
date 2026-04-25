@@ -86,7 +86,10 @@
 | 3a | qc0-mclachlan.par による ET feasibility 確認 | [#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10) | ✅ 完了 (smoke 26 分で完走、make ターゲット化済) |
 | 3b-i | N=28 メモリ/時間 feasibility 計測 | - | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み → N=16 方針へ転換) |
 | 3b-ii | N=16 対応の rpar grid 改変 | [#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9) | ✅ 完了 (inner_radius 拡大で 1.84 sec/iter, peak 21 GiB, ringdown ~5.7 日見込み) |
-| 3c | GW150914 本番実行 (N=16) | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
+| 3c-1 | checkpoint write/restart 動作確認 | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | ✅ 完了 (np=1 で POSIX lock 不発、walltime+terminate 両経路書込み + recover 成功) |
+| 3c-2 | Stage A (0 → 100 M, 6.6h) | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
+| 3c-3 | Stage B (100 → 1000 M, +2.7 日) | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
+| 3c-4 | Stage C (1000 → 1700 M, +4.7 日, optional) | [#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット (+ Zenodo N=28 比較) | [#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4) | 未着手 |
 | 5 | 3D 可視化（オプション） | [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5) | 未着手 |
 
@@ -95,6 +98,13 @@
 困難なため、3a で ET 本体の feasibility（infra 問題の有無）を qc0-mclachlan で
 先に保証 → 3b-i で N=28 本体の feasibility 計測 → 3b-ii で N=16 grid 改変 →
 3c で N=16 本番、という順で進める。
+
+**Phase 3c の staged validation**: 1700 M まで一気に走らせて Zenodo と一括比較
+するのは効率が悪い (失敗箇所の局所化困難 + 早期失敗時のコスト過大)。
+3c-1 (checkpoint 動作確認) → 3c-2 (Stage A 100 M) → 3c-3 (Stage B 1000 M)
+→ 3c-4 (Stage C 1700 M, optional) の段階制で、各 stage 終了後に Zenodo 比較
+を行い go/no-go 判定する方式 (Issue #3 コメント参照)。restart capability が
+前提となるため 3c-1 が必須。
 
 **N=16 解像度選択の根拠 (Phase 3b-i の結論)**:
 N=28 は 16 コア環境にも載る（peak 50 GiB, 80 GB 以内）が、ringdown まで
@@ -391,9 +401,73 @@ dt_it = 0.00375 M (N=28 の 0.00215 M の 1.75 倍 = 28/16)
 1. **checkpoint 戦略の決定** (Phase 3a でも未解決): HDF5 1.10.4 POSIX
    lock 問題で複数 rank からの同時書き込みが失敗。np=1 構成なら問題
    ないはずだが要確認。落ちた場合は CarpetIOHDF5 per-proc モード or
-   parallel HDF5 (MPI-IO) を試す。
+   parallel HDF5 (MPI-IO) を試す。 → **Phase 3c-1 で確認済**
 2. 最低 ringdown 100 M 込み (= 1000 M) を目標に N=16 本番 run 投入。
 3. Zenodo 10.5281/zenodo.155394 の N=28 reference データを Phase 4 で比較。
+
+## Phase 3c-1 メモ (checkpoint write/restart 動作確認, Issue #3)
+
+### 結論
+
+`np=1 × OMP=16` で **HDF5 1.10.4 POSIX lock 問題は再発しない**。walltime
+トリガ + on_terminate トリガの両方で書き込み成功、`recover=auto` で復帰
+動作も確認。Phase 3a/3b で踏んだ lock 問題は np>=2 固有の現象だった。
+
+### 採用構成 (Phase 3c-2 以降の本番でも同じ)
+
+- 並列度: `np=1 × OMP=16` (Phase 3b-i 以来不変)
+- `IO::checkpoint_dir = "../checkpoints/<sub-dir>"` (cwd 相対)
+- `${SIM_CHECKPOINT_DIR}` を `/home/etuser/checkpoints` に bind mount
+  (host persistent, デフォルト `${HOME}/gw150914-checkpoints`)
+- `IO::checkpoint_every_walltime_hours = 0.5` (production では適宜調整)
+- `IO::checkpoint_on_terminate = yes`
+- `IO::checkpoint_keep = 2`
+- `IO::abort_on_io_errors = yes`
+
+### 実測 (3 回の run)
+
+| run | wall time | peak mem | 結果 |
+| --- | --- | --- | --- |
+| write 1 (walltime=2.0h) | 1h03m41s | 25.13 GiB | ✅ Done. ただし walltime トリガ未発火 (=2h>run長), bind mount 外に書込み |
+| write 2 (walltime=0.5h, mount 修正後) | 1h03m12s | 25.65 GiB | ✅ Done. iter 1956/3972/4000 で 3 ckpt 発火, host persistent |
+| restart (recover=auto, itlast=4500) | 8m41s | 26.29 GiB | ✅ Done. it_4000 から復帰 → +500 iter evolve → it_4500 書込み |
+
+### 重要な発見
+
+#### 実 sec/iter は 0.89 (Phase 3b-ii 推定 1.84 の半分)
+
+write run 2 の evolve 時間 = 約 1h × 60 / 4000 iter = 0.89 sec/iter。
+Phase 3b-ii の 1.84 は最初の 16 iter (AMR 立ち上がり込み) の値で、
+steady state の倍程度のオーバーヘッドが含まれていた。
+
+| Stage | iter | 旧見積 (1.84 s/iter) | **新見積 (0.89 s/iter)** |
+| --- | --- | --- | --- |
+| A (100 M) | 26,500 | 1.1 日 | **6.6 時間** |
+| B (1000 M) | 265,000 | 5.7 日 | **2.7 日** |
+| C (1700 M) | 451,000 | 9.6 日 | **4.7 日** |
+
+#### checkpoint_dir の cwd 相対は bind mount 外に出やすい
+
+`../checkpoint-test` は cwd `/home/etuser/simulations` から見て
+`/home/etuser/checkpoint-test/` (= bind mount 外) に解決される。
+専用 bind mount `${SIM_CHECKPOINT_DIR}:/home/etuser/checkpoints` を
+追加して `../checkpoints/` 配下に置く運用に修正。
+
+#### checkpoint 1 個あたり 15 GB
+
+N=16 でも 1 ckpt = 15 GB。`checkpoint_keep=2` でも 30 GB 常時消費。
+production stage 跨ぎで累積する可能性あり (`keep=2` は単一 run 内のみ
+有効と推測)。`${SIM_CHECKPOINT_DIR}` をローカル SSD に置く運用必須。
+
+### Phase 3c-2 (Stage A) 以降への申し送り
+
+1. **parfile generator に stage モード追加**: 現在 `cctk_itlast` ベースだが、
+   stage では `cctk_final_time = 100/1000/1700` (= 物理時間ベース) の方が
+   直感的。`--stage A/B/C` オプションを追加予定
+2. **Zenodo データ内訳調査** (別セッションで先行実施): 466 MB の 6 checkpoint
+   がどの evolution time に対応するか確認 → 100 M 比較点の妥当性を検証
+3. **Stage A は半日で完走見込み** → 投入は気軽。失敗判明も早い
+4. **disk monitoring**: 累積 ckpt で host disk が圧迫されないか監視 (要 cleanup script)
 
 ## 成果物の扱い
 

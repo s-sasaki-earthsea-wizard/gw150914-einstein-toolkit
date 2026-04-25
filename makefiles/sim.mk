@@ -26,6 +26,7 @@ QC0_SMOKE_PARFILE := par/qc0-mclachlan/generated/qc0-mclachlan-smoke.par
 GW_RPAR              := par/GW150914/GW150914.rpar
 GW_FEASIBILITY_PAR   := par/GW150914/generated/gw150914-feasibility.par
 GW_N16_PAR           := par/GW150914/generated/gw150914-n16-feasibility.par
+GW_N16_CKPT_PAR      := par/GW150914/generated/gw150914-n16-checkpoint-test.par
 GW_CONTAINER_NAME    := gw150914-et
 
 # feasibility run の cctk_itlast. 0 = TwoPunctures のみ。
@@ -38,6 +39,12 @@ SIM_N16_MAXRLS       ?=
 
 # 単一試行の wall time 上限 (秒)。OOM ハング暴発防止 (Phase 3b-i で 297 分ハング実測)。
 SIM_RUN_TIMEOUT ?= 1800
+
+# Phase 3c-1 checkpoint 検証用。
+# write モードは 2h walltime + 約 5 分 evolve buffer のため 8000s 余裕を持って指定。
+SIM_CKPT_TIMEOUT ?= 8000
+SIM_CKPT_MODE    ?= write    # write | restart
+SIM_CKPT_ITLAST  ?=          # 空なら mode 既定値 (write=4000, restart=4500)
 
 .PHONY: qc0-smoke-parfile
 qc0-smoke-parfile: ## qc0 smoke 用 par を生成 (cctk_itlast=10, checkpoint 無効)
@@ -146,6 +153,52 @@ run-gw150914-n16-feasibility: gw150914-n16-parfile ## GW150914 N=16 feasibility 
 	echo "詳細は $$MEMLOG を参照"; \
 	if [ "$$RC" = "137" ] || [ "$$RC" = "124" ]; then \
 		echo "[警告] timeout ($(SIM_RUN_TIMEOUT)s) に達して強制終了されました"; \
+	fi; \
+	exit $$RC
+
+.PHONY: gw150914-n16-checkpoint-test-parfile
+gw150914-n16-checkpoint-test-parfile: ## Phase 3c-1 checkpoint 検証 par 生成 (SIM_CKPT_MODE=write|restart)
+	@test -f $(GW_RPAR) || (echo "GW150914.rpar 未取得: make fetch-parfile を先に実行" && exit 1)
+	@$(COMPOSE) exec -T et python3 /home/etuser/work/scripts/generate_gw150914_n16_checkpoint_test_parfile.py \
+		--mode $(SIM_CKPT_MODE) \
+		$(if $(SIM_CKPT_ITLAST),--itlast $(SIM_CKPT_ITLAST),)
+
+.PHONY: run-gw150914-n16-checkpoint-test
+run-gw150914-n16-checkpoint-test: gw150914-n16-checkpoint-test-parfile ## Phase 3c-1: N=16 checkpoint write/restart 検証 (SIM_CKPT_MODE=write|restart, ~2h)
+	@echo "実行設定: N=16 checkpoint mode=$(SIM_CKPT_MODE) np=$(SIM_MPI_PROCS) × OMP=$(SIM_OMP_THREADS) timeout=$(SIM_CKPT_TIMEOUT)s"
+	@mkdir -p _logs
+	@TS=$$(date +%Y%m%d-%H%M%S); \
+	TAG="n16-ckpt-$(SIM_CKPT_MODE)-np$(SIM_MPI_PROCS)-omp$(SIM_OMP_THREADS)-$$TS"; \
+	LOG="_logs/gw150914-$$TAG.log"; \
+	MEMLOG="_logs/gw150914-mem-$$TAG.log"; \
+	echo "実行ログ: $$LOG"; \
+	echo "メモリログ: $$MEMLOG"; \
+	bash scripts/sample_container_memory.sh $(GW_CONTAINER_NAME) "$$MEMLOG" 5 & \
+	MEMPID=$$!; \
+	trap "kill $$MEMPID 2>/dev/null || true" EXIT INT TERM; \
+	set +e; \
+	$(COMPOSE) exec -T -w /home/etuser/simulations et bash -c '\
+		time timeout --signal=KILL $(SIM_CKPT_TIMEOUT) mpirun \
+			-np $(SIM_MPI_PROCS) \
+			-genv OMP_NUM_THREADS $(SIM_OMP_THREADS) \
+			-genv HDF5_USE_FILE_LOCKING FALSE \
+			$(CACTUS_SIM) \
+			/home/etuser/work/$(GW_N16_CKPT_PAR) \
+			2>&1' | tee "$$LOG"; \
+	RC=$${PIPESTATUS[0]}; \
+	kill $$MEMPID 2>/dev/null || true; \
+	wait $$MEMPID 2>/dev/null || true; \
+	echo ""; \
+	echo "=== メモリ使用量サマリ ==="; \
+	awk 'NR>1 && $$2 ~ /[GM]iB$$/ { \
+		v=$$2; unit=""; \
+		if (v ~ /GiB/) { sub(/GiB/,"",v); g=v+0 } \
+		else if (v ~ /MiB/) { sub(/MiB/,"",v); g=(v+0)/1024.0 } \
+		if (g>max) max=g \
+	} END { printf "peak container memory: %.2f GiB\n", max }' "$$MEMLOG"; \
+	echo "詳細は $$MEMLOG を参照"; \
+	if [ "$$RC" = "137" ] || [ "$$RC" = "124" ]; then \
+		echo "[警告] timeout ($(SIM_CKPT_TIMEOUT)s) に達して強制終了されました"; \
 	fi; \
 	exit $$RC
 

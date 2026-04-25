@@ -73,7 +73,8 @@ $EDITOR .env
 
 | 変数 | 意味 | デフォルト |
 | --- | --- | --- |
-| `SIM_OUTPUT_DIR` | シミュレーション出力先（ローカル SSD 推奨） | `${HOME}/gw150914-output` |
+| `SIM_OUTPUT_DIR` | シミュレーション診断出力先（ローカル SSD 推奨） | `${HOME}/gw150914-output` |
+| `SIM_CHECKPOINT_DIR` | checkpoint 専用出力先 (Phase 3c 以降, ローカル SSD 推奨) | `${HOME}/gw150914-checkpoints` |
 | `JUPYTER_PORT` | Jupyter Lab 公開ポート | `8888` |
 | `CONTAINER_CPUSET` | 固定する物理 CPU コア範囲 | `0-15` |
 | `CONTAINER_MEM_LIMIT` | コンテナ最大メモリ | `80g` |
@@ -155,10 +156,39 @@ make run-gw150914-n16-feasibility \
 ```
 
 実測 (np=1 × OMP=16, evolve 16 iter):
-- wall time 4m27s, peak mem 21 GiB, **1.84 sec/iter**
-- フル run 見積もり: 900 M (マージャー) で **5.1 日**, 1000 M で 5.7 日
+- wall time 4m27s, peak mem 21 GiB, 1.84 sec/iter (短時間 evolve, AMR 立ち上げ込み)
 - 30 分 timeout (`SIM_RUN_TIMEOUT`) で OOM ハング (Phase 3b-i で 297 分
   ハングを実測) を防止
+
+### GW150914 checkpoint 動作確認 (Phase 3c-1)
+
+長時間 run の途中再開のため checkpoint write/restart が動作することを実測する:
+
+```bash
+# write 検証 (clean start, walltime 0.5h + on_terminate トリガで 2 経路書き込み)
+make run-gw150914-n16-checkpoint-test \
+    SIM_MPI_PROCS=1 SIM_OMP_THREADS=16 SIM_CKPT_MODE=write
+# → 約 1 時間, 出力は ${SIM_CHECKPOINT_DIR}/checkpoint-test/
+
+# restart 検証 (recover=auto で最新 checkpoint からロード)
+make run-gw150914-n16-checkpoint-test \
+    SIM_MPI_PROCS=1 SIM_OMP_THREADS=16 SIM_CKPT_MODE=restart
+# → 約 9 分 (TwoPunctures skip)
+```
+
+実測:
+- write run: 1h03m, peak 25.7 GiB, 3 ckpt event (iter 1956/3972/4000)
+- restart run: 8m41s, peak 26.3 GiB, it_4000 から復帰 → it_4500 まで evolve
+- **steady-state sec/iter = 0.89** (1.84 から大幅下方修正)
+- **POSIX lock 問題は np=1 で再発せず** (Wiki 参照: [HDF5 Checkpoint POSIX Lock Issue](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/wiki/HDF5-Checkpoint-POSIX-Lock-Issue))
+
+production stage の wall time 見積もり (0.89 sec/iter ベース):
+
+| Stage | evolve | iter | wall time |
+| --- | --- | --- | --- |
+| A | 100 M | 26,500 | 6.6 時間 |
+| B | 1000 M (merger + ringdown) | 265,000 | 2.7 日 |
+| C | 1700 M (公式フル) | 451,000 | 4.7 日 |
 
 ### テスト
 
@@ -199,7 +229,10 @@ make plot
 | 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | ✅ 完了 |
 | 3b-i | N=28 メモリ/時間 feasibility 計測 | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み) |
 | 3b-ii | N=16 対応 rpar grid 改変 ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | ✅ 完了 (sphere_inner_radius 拡大で 1.84 sec/iter, 21 GiB, ringdown ~5.7 日見込み) |
-| 3c | GW150914 本番実行 (N=16) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 3c-1 | checkpoint write/restart 動作確認 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | ✅ 完了 (np=1 で POSIX lock 不発、walltime+terminate 両経路 + recover 成功、steady-state 0.89 sec/iter) |
+| 3c-2 | Stage A run (0 → 100 M, 6.6h) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 3c-3 | Stage B run (100 → 1000 M, +2.7 日) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 3c-4 | Stage C run (1000 → 1700 M, +4.7 日, optional) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
 | 4 | 軌道・波形の抽出とプロット + Zenodo N=28 比較 ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
 
