@@ -39,23 +39,30 @@ from tests.helpers.parfile import generate_par  # noqa: E402
 # 共通の checkpoint 関連 overrides。
 #   - rpar 原本は autoprobe + on_terminate=yes だが、明示制御するため
 #     全パラメータを上書き
-#   - checkpoint_dir / recover_dir は ../checkpoint-test に分離
-#     (将来の本番 checkpoint と混ざらないよう test 用名に)
+#   - checkpoint_dir は ../checkpoints/checkpoint-test (本番 ckpt と
+#     混ざらないよう test 用 subdir に分離). ../checkpoints は
+#     docker-compose.yml で ${SIM_CHECKPOINT_DIR} bind mount 済
+#     (= host persistent)
 COMMON_OVERRIDES: dict[str, object] = {
     "Cactus::terminate": "iteration",
     "CarpetIOHDF5::checkpoint": True,
     "IO::checkpoint_ID": False,
-    "IO::checkpoint_dir": "../checkpoint-test",
-    "IO::recover_dir": "../checkpoint-test",
+    "IO::checkpoint_dir": "../checkpoints/checkpoint-test",
+    "IO::recover_dir": "../checkpoints/checkpoint-test",
     "IO::checkpoint_keep": 2,
     "IO::abort_on_io_errors": True,
 }
 
 # write モード固有: clean start + 2 個の ckpt (walltime + on_terminate) を生成
+#   - walltime トリガを 0.5h に設定する根拠: Phase 3c-1 第 1 回試行で
+#     0.89 sec/iter / cctk_itlast=4000 = 約 1h で完走。 walltime=0.5h なら
+#     iter 2000 付近 (約 30 分時点) で walltime トリガが確実に発火し、
+#     その後 iter 4000 で on_terminate が発火 → 2 個の checkpoint で
+#     2 経路を確実にカバー
 WRITE_MODE_OVERRIDES: dict[str, object] = {
     "IO::recover": "no",
     "IO::checkpoint_every": -1,
-    "IO::checkpoint_every_walltime_hours": 2.0,
+    "IO::checkpoint_every_walltime_hours": 0.5,
     "IO::checkpoint_on_terminate": True,
 }
 

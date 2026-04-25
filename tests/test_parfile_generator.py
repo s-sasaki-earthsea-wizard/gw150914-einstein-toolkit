@@ -340,11 +340,14 @@ def _build_ckpt_par(tmp_path, mode: str, itlast: int) -> str:
 
 
 def test_ckpt_write_mode_enables_checkpointing(tmp_path) -> None:
-    """write モード: clean start (recover=no) + walltime + on_terminate トリガが両方有効"""
+    """write モード: clean start (recover=no) + walltime 0.5h + on_terminate"""
     content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
     assert 'IO::recover' in content and '= "no"' in content
     assert "IO::checkpoint_every_walltime_hours" in content
-    assert "= 2.0" in content
+    # walltime トリガを 0.5h に設定 (Phase 3c-1 第 2 回試行で iter ~2000 時点
+    # で walltime 経路を発火させるため。1 回目では 2.0h で発火せず terminate
+    # 経路のみ検証されたため修正)
+    assert "= 0.5" in content
     # on_terminate と CarpetIOHDF5::checkpoint が yes
     assert "IO::checkpoint_on_terminate" in content
     assert "CarpetIOHDF5::checkpoint" in content
@@ -367,11 +370,15 @@ def test_ckpt_restart_mode_recovers_auto(tmp_path) -> None:
 
 
 def test_ckpt_uses_separated_checkpoint_dir(tmp_path) -> None:
-    """checkpoint_dir / recover_dir が ../checkpoint-test (本番と分離) になる"""
+    """checkpoint_dir / recover_dir が ../checkpoints/checkpoint-test (test 用 subdir)
+    に置かれる. ../checkpoints は docker-compose の SIM_CHECKPOINT_DIR
+    bind mount で host persistent
+    """
     content = _build_ckpt_par(tmp_path, mode="write", itlast=4000)
     assert 'IO::checkpoint_dir' in content
-    assert '"../checkpoint-test"' in content
+    assert '"../checkpoints/checkpoint-test"' in content
     assert 'IO::recover_dir' in content
+    assert '"../checkpoints/checkpoint-test"' in content
 
 
 def test_ckpt_write_mode_itlast_is_applied(tmp_path) -> None:
