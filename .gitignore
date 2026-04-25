@@ -18,6 +18,9 @@
 # Simulation output (fallback directory when SIM_OUTPUT_DIR is not set to host SSD)
 simulations/
 
+# Phase 4 解析出力 (compare-stage-a 等の JSON / plot 出力先)
+reports/
+
 # feasibility / sweep ログ (host 側のメモリサンプラ + cactus stdout)
 _logs/
 
