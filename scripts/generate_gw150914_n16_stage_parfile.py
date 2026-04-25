@@ -55,12 +55,20 @@ STAGE_WALL_HOURS: dict[str, float] = {
 }
 
 
-def stage_overrides(stage: str, simulation_name: str) -> dict[str, object]:
+def stage_overrides(
+    stage: str,
+    simulation_name: str,
+    continue_from: str | None = None,
+) -> dict[str, object]:
     """Stage 共通の Cactus parameter overrides を返す.
 
     Args:
         stage: ``"A"`` / ``"B"`` / ``"C"``
         simulation_name: checkpoint_dir の subdir 名にも使われる
+        continue_from: 前 stage の checkpoint から継続する場合に指定
+            (例: Stage B 投入時に ``"A"`` を渡すと
+            ``IO::recover_dir`` を Stage A の ckpt dir に向ける)。
+            ``None`` の場合は自 stage の ckpt dir のみを参照。
 
     Returns:
         apply_overrides() 互換の辞書
@@ -72,6 +80,24 @@ def stage_overrides(stage: str, simulation_name: str) -> dict[str, object]:
 
     ckpt_subdir = f"../checkpoints/{simulation_name}"
 
+    # cross-stage 継続の場合は recover_dir を前 stage に向ける。
+    # checkpoint_dir (= 書込み先) は当 stage 用に分離して持つ
+    # (= 前 stage の ckpt が誤って上書きされない、stage 別 cleanup が容易).
+    if continue_from is None:
+        recover_subdir = ckpt_subdir
+    else:
+        prev = continue_from.upper()
+        if prev not in STAGE_FINAL_TIMES:
+            raise ValueError(
+                f"未知の continue_from: {continue_from!r} "
+                f"(許容値: {sorted(STAGE_FINAL_TIMES)})"
+            )
+        if prev == stage:
+            raise ValueError(
+                f"continue_from と stage が同じ: {stage} → 自分自身からの recover は不可"
+            )
+        recover_subdir = f"../checkpoints/gw150914-n16-stage-{prev.lower()}"
+
     return {
         # 終了条件: rpar 原本通り time モード、cctk_final_time のみ stage 別
         "Cactus::terminate": "time",
@@ -80,7 +106,7 @@ def stage_overrides(stage: str, simulation_name: str) -> dict[str, object]:
         "CarpetIOHDF5::checkpoint": True,
         "IO::checkpoint_ID": False,
         "IO::checkpoint_dir": ckpt_subdir,
-        "IO::recover_dir": ckpt_subdir,
+        "IO::recover_dir": recover_subdir,
         "IO::recover": "autoprobe",  # 既存 ckpt があれば自動 recover
         "IO::checkpoint_keep": 2,
         "IO::checkpoint_every": -1,
@@ -133,6 +159,16 @@ def main() -> None:
             " (A=8.0, B=78.6, C=133.7)"
         ),
     )
+    parser.add_argument(
+        "--continue-from",
+        choices=("A", "B"),
+        default=None,
+        help=(
+            "前 stage の checkpoint から継続する場合に指定 (A or B)。"
+            "例: Stage B 投入時 ``--continue-from A`` で Stage A の最終 ckpt から evolve 開始。"
+            "省略時は当 stage の ckpt dir のみを参照 (= clean start もしくは自 stage の resume)"
+        ),
+    )
     args = parser.parse_args()
 
     stage = args.stage
@@ -141,7 +177,7 @@ def main() -> None:
     if walltime_hours is None:
         walltime_hours = round(STAGE_WALL_HOURS[stage] * 1.2, 1)
 
-    overrides = stage_overrides(stage, simulation_name)
+    overrides = stage_overrides(stage, simulation_name, continue_from=args.continue_from)
     snapped_radius = snap_inner_radius(args.inner_radius, args.n)
     overrides["Coordinates::sphere_inner_radius"] = snapped_radius
 
@@ -154,13 +190,19 @@ def main() -> None:
         overrides=overrides,
         enable_constraint_output=True,
     )
+    cont_msg = (
+        f", continue_from={args.continue_from} "
+        f"(recover_dir={overrides['IO::recover_dir']!r})"
+        if args.continue_from
+        else ""
+    )
     print(
         f"生成しました: {par_path.relative_to(ROOT)} "
         f"(stage={stage}, final_time={STAGE_FINAL_TIMES[stage]} M, "
         f"N={args.n}, "
         f"inner_radius=snap({args.inner_radius}→{snapped_radius:.4f}), "
         f"walltime={walltime_hours} h, "
-        f"checkpoint_dir={overrides['IO::checkpoint_dir']!r})"
+        f"checkpoint_dir={overrides['IO::checkpoint_dir']!r}{cont_msg})"
     )
 
 

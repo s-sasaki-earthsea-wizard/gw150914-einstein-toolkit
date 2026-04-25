@@ -212,32 +212,35 @@ run-gw150914-n16-checkpoint-test: gw150914-n16-checkpoint-test-parfile ## Phase 
 	exit $$RC
 
 .PHONY: gw150914-n16-stage-parfile
-gw150914-n16-stage-parfile: ## Phase 3c-2/3/4 stage parfile を生成 (SIM_STAGE=A|B|C)
+gw150914-n16-stage-parfile: ## Phase 3c-2/3/4 stage parfile を生成 (SIM_STAGE=A|B|C, SIM_CONTINUE_FROM=A|B 任意)
 	@test -f $(GW_RPAR) || (echo "GW150914.rpar 未取得: make fetch-parfile を先に実行" && exit 1)
 	@test -n "$(SIM_STAGE)" || (echo "SIM_STAGE が未指定です (A|B|C)" && exit 1)
 	@$(COMPOSE) exec -T et python3 /home/etuser/work/scripts/generate_gw150914_n16_stage_parfile.py \
-		--stage $(SIM_STAGE)
+		--stage $(SIM_STAGE) \
+		$(if $(SIM_CONTINUE_FROM),--continue-from $(SIM_CONTINUE_FROM),)
 
 .PHONY: run-gw150914-n16-stage-a
-run-gw150914-n16-stage-a: ## Phase 3c-2 Stage A: 0 → 100 M N=16 本番 run (~6.6h, restart capable)
+run-gw150914-n16-stage-a: ## Phase 3c-2 Stage A: 0 → 100 M N=16 本番 run (~6.6h, clean start)
 	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
-		STAGE=a STAGE_PAR=$(GW_N16_STAGE_A_PAR) STAGE_TIMEOUT=$(SIM_STAGE_A_TIMEOUT)
+		STAGE=a STAGE_PAR=$(GW_N16_STAGE_A_PAR) STAGE_TIMEOUT=$(SIM_STAGE_A_TIMEOUT) CONTINUE_FROM=
 
 .PHONY: run-gw150914-n16-stage-b
-run-gw150914-n16-stage-b: ## Phase 3c-3 Stage B: 100 → 1000 M (累計 ~2.7d, restart 前提)
+run-gw150914-n16-stage-b: ## Phase 3c-3 Stage B: 100 → 1000 M (Stage A の ckpt から継続、累計 ~2.7d)
 	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
-		STAGE=b STAGE_PAR=$(GW_N16_STAGE_B_PAR) STAGE_TIMEOUT=$(SIM_STAGE_B_TIMEOUT)
+		STAGE=b STAGE_PAR=$(GW_N16_STAGE_B_PAR) STAGE_TIMEOUT=$(SIM_STAGE_B_TIMEOUT) CONTINUE_FROM=A
 
 .PHONY: run-gw150914-n16-stage-c
-run-gw150914-n16-stage-c: ## Phase 3c-4 Stage C: 1000 → 1700 M (累計 ~4.7d, optional)
+run-gw150914-n16-stage-c: ## Phase 3c-4 Stage C: 1000 → 1700 M (Stage B の ckpt から継続、累計 ~4.7d, optional)
 	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
-		STAGE=c STAGE_PAR=$(GW_N16_STAGE_C_PAR) STAGE_TIMEOUT=$(SIM_STAGE_C_TIMEOUT)
+		STAGE=c STAGE_PAR=$(GW_N16_STAGE_C_PAR) STAGE_TIMEOUT=$(SIM_STAGE_C_TIMEOUT) CONTINUE_FROM=B
 
 # 内部実装: stage 共通の実行ロジック (parfile 生成 + mpirun + メモリログ)
 .PHONY: _run-gw150914-n16-stage
 _run-gw150914-n16-stage:
-	@echo "実行設定: N=16 Stage $(STAGE) np=$(SIM_MPI_PROCS) × OMP=$(SIM_OMP_THREADS) timeout=$(STAGE_TIMEOUT)s"
-	@$(MAKE) --no-print-directory gw150914-n16-stage-parfile SIM_STAGE=$(shell echo $(STAGE) | tr a-z A-Z)
+	@echo "実行設定: N=16 Stage $(STAGE) np=$(SIM_MPI_PROCS) × OMP=$(SIM_OMP_THREADS) timeout=$(STAGE_TIMEOUT)s$(if $(CONTINUE_FROM), continue_from=$(CONTINUE_FROM),)"
+	@$(MAKE) --no-print-directory gw150914-n16-stage-parfile \
+		SIM_STAGE=$(shell echo $(STAGE) | tr a-z A-Z) \
+		SIM_CONTINUE_FROM=$(CONTINUE_FROM)
 	@mkdir -p _logs
 	@TS=$$(date +%Y%m%d-%H%M%S); \
 	TAG="n16-stage-$(STAGE)-np$(SIM_MPI_PROCS)-omp$(SIM_OMP_THREADS)-$$TS"; \

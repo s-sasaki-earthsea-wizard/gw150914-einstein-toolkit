@@ -558,6 +558,48 @@ def test_stage_overrides_rejects_unknown_stage() -> None:
         stage_overrides("Z", "test")
 
 
+@pytest.mark.parametrize("stage,prev", [("B", "A"), ("C", "B")])
+def test_stage_continue_from_changes_recover_dir(tmp_path, stage: str, prev: str) -> None:
+    """--continue-from で recover_dir が前 stage の ckpt dir に向く (checkpoint_dir は当 stage)"""
+    sim_name = f"test-stage-{stage.lower()}"
+    overrides = stage_overrides(stage, sim_name, continue_from=prev)
+    overrides["Coordinates::sphere_inner_radius"] = snap_inner_radius(77.14, n=16)
+    par = generate_par(
+        tmp_path,
+        n=16,
+        simulation_name=sim_name,
+        walltime_hours=8.0,
+        overrides=overrides,
+        enable_constraint_output=True,
+    )
+    content = par.read_text(encoding="utf-8")
+    # checkpoint_dir は自 stage 用
+    assert f'IO::checkpoint_dir                          = "../checkpoints/{sim_name}"' in content
+    # recover_dir は前 stage 用
+    assert (
+        f'IO::recover_dir                             = "../checkpoints/gw150914-n16-stage-{prev.lower()}"'
+        in content
+    )
+
+
+def test_stage_continue_from_none_uses_self_dir(tmp_path) -> None:
+    """continue_from=None なら recover_dir == checkpoint_dir (= 自 stage の resume)"""
+    overrides = stage_overrides("A", "self-test", continue_from=None)
+    assert overrides["IO::recover_dir"] == overrides["IO::checkpoint_dir"]
+
+
+def test_stage_continue_from_rejects_self() -> None:
+    """continue_from が自 stage と同じならエラー (= 自分から recover は意味なし)"""
+    with pytest.raises(ValueError, match="同じ"):
+        stage_overrides("B", "test", continue_from="B")
+
+
+def test_stage_continue_from_rejects_unknown() -> None:
+    """未知の stage 文字列は ValueError"""
+    with pytest.raises(ValueError, match="未知の continue_from"):
+        stage_overrides("B", "test", continue_from="Z")
+
+
 def test_stage_no_cctk_itlast_set(tmp_path) -> None:
     """stage モードでは cctk_itlast を上書きしない (final_time で打ち切り)
 
