@@ -89,6 +89,41 @@ class TestZenodoReader:
             _simdir.find_segments("/nonexistent/path/zzz")
 
 
+class TestFlatLayoutFallback:
+    """Phase 3c-2 自前 N=16 run は SimFactory を介さない単一 Cactus 起動のため
+    ``output-NNNN`` を持たない flat layout になる。``find_segments`` が
+    marker file を見て sim_dir 自体を 1 segment として返すか検証.
+    """
+
+    def test_flat_dir_with_psi4_marker_returns_self(self, tmp_path) -> None:
+        (tmp_path / "mp_psi4.h5").touch()
+        segs = _simdir.find_segments(tmp_path)
+        assert segs == [tmp_path]
+
+    def test_flat_dir_with_qlm_marker_returns_self(self, tmp_path) -> None:
+        (tmp_path / "quasilocalmeasures-qlm_scalars..asc").touch()
+        segs = _simdir.find_segments(tmp_path)
+        assert segs == [tmp_path]
+
+    def test_flat_dir_with_bh_diag_marker_returns_self(self, tmp_path) -> None:
+        (tmp_path / "BH_diagnostics.ah1.gp").touch()
+        segs = _simdir.find_segments(tmp_path)
+        assert segs == [tmp_path]
+
+    def test_empty_dir_returns_empty(self, tmp_path) -> None:
+        """marker file も output-* も無ければ空リスト (NotFoundError ではない)"""
+        segs = _simdir.find_segments(tmp_path)
+        assert segs == []
+
+    def test_segmented_layout_takes_priority(self, tmp_path) -> None:
+        """output-* と marker file の両方があれば segmented を優先"""
+        seg_inner = tmp_path / "output-0000" / "sim"
+        seg_inner.mkdir(parents=True)
+        (tmp_path / "mp_psi4.h5").touch()  # marker は無視される
+        segs = _simdir.find_segments(tmp_path)
+        assert segs == [seg_inner]
+
+
 class TestReferenceValues:
     """A3/A5 で確定した t=100 M reference 値と reader 出力が一致するか.
 

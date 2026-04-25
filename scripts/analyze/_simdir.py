@@ -42,16 +42,37 @@ BH_AREAL_RADIUS_COL = 27   # 1-based col 28 = areal_radius
 PSI4_KEY_PATTERN = re.compile(r"l(-?\d+)_m(-?\d+)_r(\d+(?:\.\d+)?)")
 
 
+# 単一 segment 判定に使う marker file (これらが直下にあれば flat layout とみなす)
+_FLAT_SIMDIR_MARKERS = (
+    "mp_psi4.h5",
+    "quasilocalmeasures-qlm_scalars..asc",
+    "BH_diagnostics.ah1.gp",
+)
+
+
 def find_segments(sim_dir: Path | str) -> list[Path]:
     """``sim_dir`` 配下の segment 内側ディレクトリ一覧を返す.
 
+    2 種類のレイアウトに対応する:
+
+    1. **SimFactory 多 segment レイアウト** (Zenodo N=28 など):
+       ``<sim_dir>/output-NNNN/<sim_name>/...`` — walltime restart の
+       segment 単位で並ぶ
+    2. **単一 Cactus run の flat レイアウト** (Phase 3c-2/3/4 自前 N=16):
+       ``<sim_dir>/...`` — 直下に出力ファイルが並ぶ
+
+    後者は ``output-*`` サブディレクトリが存在せず、かつ
+    ``mp_psi4.h5`` / ``quasilocalmeasures-qlm_scalars..asc`` /
+    ``BH_diagnostics.ah1.gp`` のいずれかが直下に存在する場合に
+    「単一 virtual segment」として ``[sim_dir]`` を返す。
+
     Args:
         sim_dir: simulation ルート (e.g. ``data/.../GW150914_28``,
-            ``simulations/<sim_name>``)。直下に ``output-NNNN/`` が並ぶ。
+            ``~/gw150914-output/gw150914-n16-stage-a``)。
 
     Returns:
-        ``output-NNNN`` 順に sort された ``output-NNNN/<sim_name>/`` パスのリスト。
-        空の場合は空リスト。
+        ``output-NNNN`` 順に sort された segment 内側のパスのリスト。
+        flat layout の場合は ``[sim_dir]``。空の場合は空リスト。
 
     Raises:
         FileNotFoundError: ``sim_dir`` が存在しない場合。
@@ -75,7 +96,12 @@ def find_segments(sim_dir: Path | str) -> list[Path]:
         subdirs = [d for d in od.iterdir() if d.is_dir()]
         if len(subdirs) == 1:
             segments.append(subdirs[0])
-    return segments
+    if segments:
+        return segments
+    # flat layout fallback: marker file が直下にあれば sim_dir 自身を 1 segment とみなす
+    if any((sim_dir / m).exists() for m in _FLAT_SIMDIR_MARKERS):
+        return [sim_dir]
+    return []
 
 
 def _dedup_by_first_col(arr: np.ndarray) -> np.ndarray:
