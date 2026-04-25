@@ -6,6 +6,11 @@ GW150914.rpar は Python スクリプトであり、`@N@` / `@SIMULATION_NAME@` 
 
 本モジュールはその一連の処理をラップし、さらに生成後の .par に対して
 Cactus パラメータを後付けで上書きする `overrides` を提供する。
+
+加えて Phase 3b-ii (Issue #9) 対応として、N<28 で実行する際に必要な
+``maxrls`` (refinement level 数) の縮小を rpar ソースレベルでパッチ
+当てする ``patch_maxrls`` 機構を提供する。原本 rpar は無改変、コピー
+側にだけパッチが当たる。
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ def generate_par(
     simulation_name: str = "smoke",
     walltime_hours: float = 0.5,
     overrides: dict[str, Any] | None = None,
+    maxrls: int | None = None,
 ) -> Path:
     """rpar のプレースホルダを置換して実行し、.par を生成する
 
@@ -38,6 +44,9 @@ def generate_par(
         simulation_name: `@SIMULATION_NAME@` の置換値（IO::out_dir に使われる）
         walltime_hours: `@WALLTIME_HOURS@` の置換値（TerminationTrigger 用）
         overrides: 生成後の .par に対する Cactus パラメータ上書き辞書
+        maxrls: 指定すると rpar ソースの ``maxrls = 9`` を上書きし、
+            ``rlsp / rlsm`` を ``maxrls - 2`` で cap する（Issue #9 対応）。
+            ``None`` (デフォルト) なら原本通り。
 
     Returns:
         生成された .par ファイルの絶対パス
@@ -57,6 +66,9 @@ def generate_par(
         .replace("@SIMULATION_NAME@", simulation_name)
         .replace("@WALLTIME_HOURS@", str(walltime_hours))
     )
+
+    if maxrls is not None:
+        substituted = patch_maxrls(substituted, maxrls)
 
     # rpar 内の sys.argv[0] から .par の出力名が決まるため
     # ファイル名は {simulation_name}.rpar にする
@@ -79,6 +91,73 @@ def generate_par(
         apply_overrides(par_path, overrides)
 
     return par_path
+
+
+def patch_maxrls(rpar_text: str, maxrls: int) -> str:
+    """rpar ソースの ``maxrls`` を縮小し、``rlsp / rlsm`` を ``maxrls - 2`` で cap する
+
+    公式 GW150914.rpar は N=28 前提で grid 構造が固定されており、N<28 では
+    refinement level 1 の box が Thornburg04 inter-patch 境界を超えて crash する
+    (Issue #9)。本関数は rpar ソースに以下のパッチを当てて、refinement 階層を
+    縮小したコピーを返す。原本 rpar は触らない。
+
+    パッチ内容:
+      1. ``maxrls = 9`` → ``maxrls = <new>``
+      2. ``h0_min = ...`` 行の直後に ``rlsm = min(rlsm, maxrls - 2)`` を挿入
+         (h0_min の計算後にキャップすることで RL0 セルサイズを保ち、
+          外側の refinement 層を 1 層以上削減する)
+      3. ``rlsp = int(round(rlsp))`` 行の直後に
+         ``rlsp = min(rlsp, maxrls - 2)`` を挿入
+
+    Args:
+        rpar_text: 既にプレースホルダ置換済みの rpar Python ソース全文
+        maxrls: 新しい ``Carpet::max_refinement_levels``。原本では 9。
+            最低でも 4 (= rlsp/rlsm が 2 以上) を許容。
+
+    Returns:
+        パッチを当てた rpar ソース全文
+
+    Raises:
+        ValueError: ``maxrls`` が小さすぎる、または rpar 内の想定行が
+            見つからずパッチを当てられない場合。
+    """
+    if maxrls < 4:
+        raise ValueError(
+            f"maxrls={maxrls} は小さすぎます (最低 4 以上, "
+            f"rlsp/rlsm = maxrls - 2 が 2 以上である必要)"
+        )
+
+    text, n_sub = re.subn(
+        r"^maxrls = 9\b",
+        f"maxrls = {maxrls}",
+        rpar_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if n_sub != 1:
+        raise ValueError(
+            "rpar 内の `maxrls = 9` 行が見つかりません。原本が変更された可能性があります"
+        )
+
+    text, n_sub = re.subn(
+        r"(?m)^(h0_min = hfm_min \* 2\*\*\(rlsm-1\).*)$",
+        r"\1\nrlsm = min(rlsm, maxrls - 2)  # Issue #9 (Phase 3b-ii) maxrls override",
+        text,
+        count=1,
+    )
+    if n_sub != 1:
+        raise ValueError("rpar 内の `h0_min = ...` 行が見つかりません")
+
+    text, n_sub = re.subn(
+        r"(?m)^(rlsp = int\(round\(rlsp\)\))$",
+        r"\1\nrlsp = min(rlsp, maxrls - 2)  # Issue #9 (Phase 3b-ii) maxrls override",
+        text,
+        count=1,
+    )
+    if n_sub != 1:
+        raise ValueError("rpar 内の `rlsp = int(round(rlsp))` 行が見つかりません")
+
+    return text
 
 
 def apply_overrides(par_path: Path, overrides: dict[str, Any]) -> None:

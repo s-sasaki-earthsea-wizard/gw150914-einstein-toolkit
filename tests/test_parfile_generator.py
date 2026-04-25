@@ -17,6 +17,7 @@ from tests.helpers.parfile import (
     RPAR_SOURCE,
     apply_overrides,
     generate_par,
+    patch_maxrls,
 )
 
 pytestmark = pytest.mark.smoke
@@ -125,3 +126,171 @@ def test_overrides_case_insensitive(tmp_path) -> None:
     apply_overrides(par, {"cactus::TERMINATE": "iteration"})
     content = par.read_text(encoding="utf-8")
     assert '"iteration"' in content
+
+
+# ---------------------------------------------------------------------------
+# Issue #9 / Phase 3b-ii: maxrls パッチ機構
+# ---------------------------------------------------------------------------
+
+
+def test_patch_maxrls_replaces_max_refinement_levels(tmp_path) -> None:
+    """maxrls=8 で Carpet::max_refinement_levels が 8 になる"""
+    par = generate_par(tmp_path, n=16, maxrls=8)
+    content = par.read_text(encoding="utf-8")
+    assert "Carpet::max_refinement_levels           = 8" in content
+
+
+def test_patch_maxrls_caps_rlsp_rlsm(tmp_path) -> None:
+    """maxrls=8 → rlsp = rlsm = 6 (CarpetRegrid2::num_levels に反映)"""
+    par = generate_par(tmp_path, n=16, maxrls=8)
+    content = par.read_text(encoding="utf-8")
+    # 元は rlsp = rlsm = 7 だが、maxrls-2=6 で cap される
+    assert "CarpetRegrid2::num_levels_1             = 6" in content
+    assert "CarpetRegrid2::num_levels_2             = 6" in content
+
+
+def test_patch_maxrls_shrinks_outermost_radius(tmp_path) -> None:
+    """maxrls=8 では levelsp の最外層が rp*2^4 (=10.6 M 程度) に縮小される"""
+    par = generate_par(tmp_path, n=16, maxrls=8)
+    content = par.read_text(encoding="utf-8")
+    # rp ≈ 0.665, 2^4 = 16 → 約 10.64 M
+    # 厳密値ではなく first-level radius が 11 M 未満であることを確認
+    # radius_1 行: "CarpetRegrid2::radius_1 = [0,X1, X2, ...]"
+    import re as _re
+
+    match = _re.search(
+        r"CarpetRegrid2::radius_1\s*=\s*\[0,\s*([0-9.]+)",
+        content,
+    )
+    assert match is not None, "radius_1 行が見つからない"
+    outermost = float(match.group(1))
+    assert outermost < 11.0, (
+        f"maxrls=8 でも最外層が {outermost} M (10.6 M 近傍を期待)"
+    )
+    # 元の N=28/maxrls=9 だと 21.27 M 程度
+    assert outermost > 9.0, (
+        f"最外層が小さすぎる ({outermost} M)。何かを過剰に縮小している可能性"
+    )
+
+
+def test_patch_maxrls_does_not_change_h0_for_same_n(tmp_path) -> None:
+    """maxrls 変更で h_cartesian (RL0 セル幅) が変わらない (重要)
+
+    h0_min は ``rlsm`` 計算後・cap 前に確定するため、N 同じなら h_cartesian
+    は maxrls に依存しない。これにより \"外側を削る\" 意味での修正となる。
+    """
+    par_default = generate_par(tmp_path / "default", n=16)  # maxrls=None
+    par_patched = generate_par(tmp_path / "patched", n=16, maxrls=8)
+
+    import re as _re
+
+    def _h_cart(par):
+        m = _re.search(
+            r"Coordinates::h_cartesian\s*=\s*([0-9.eE+-]+)",
+            par.read_text(encoding="utf-8"),
+        )
+        assert m is not None
+        return float(m.group(1))
+
+    assert abs(_h_cart(par_default) - _h_cart(par_patched)) < 1e-9
+
+
+def test_patch_maxrls_rejects_too_small() -> None:
+    """maxrls=3 以下は拒否される"""
+    template = RPAR_SOURCE.read_text(encoding="utf-8").replace("@N@", "16")
+    with pytest.raises(ValueError, match="小さすぎ"):
+        patch_maxrls(template, maxrls=3)
+
+
+def test_patch_maxrls_default_unchanged_without_arg(tmp_path) -> None:
+    """maxrls 引数を渡さなければ Carpet::max_refinement_levels=9 のまま"""
+    par = generate_par(tmp_path, n=16)  # maxrls なし
+    content = par.read_text(encoding="utf-8")
+    assert "Carpet::max_refinement_levels           = 9" in content
+    # rlsp = rlsm = 7 (元の値)
+    assert "CarpetRegrid2::num_levels_1             = 7" in content
+
+
+@pytest.mark.parametrize("maxrls,expected_levels", [(8, 6), (7, 5), (6, 4)])
+def test_patch_maxrls_various_values(tmp_path, maxrls: int, expected_levels: int) -> None:
+    """各 maxrls 値で num_levels が maxrls-2 になる"""
+    par = generate_par(
+        tmp_path,
+        n=16,
+        simulation_name=f"test_n16_m{maxrls}",
+        maxrls=maxrls,
+    )
+    content = par.read_text(encoding="utf-8")
+    assert f"CarpetRegrid2::num_levels_1             = {expected_levels}" in content
+    assert f"CarpetRegrid2::num_levels_2             = {expected_levels}" in content
+
+
+# ---------------------------------------------------------------------------
+# Issue #9 / Phase 3b-ii: snap_inner_radius (Coordinates patchsystem 制約)
+# ---------------------------------------------------------------------------
+
+# scripts/ 配下のスクリプトから関数を import する。pytest 実行は repo root から。
+import importlib.util as _importlib_util  # noqa: E402
+
+_ROOT = RPAR_SOURCE.parent.parent.parent  # repo root
+_spec = _importlib_util.spec_from_file_location(
+    "n16_gen", _ROOT / "scripts" / "generate_gw150914_n16_parfile.py"
+)
+_n16_gen = _importlib_util.module_from_spec(_spec)
+_spec.loader.exec_module(_n16_gen)
+snap_inner_radius = _n16_gen.snap_inner_radius
+
+
+def _h_cartesian_for(n: int) -> float:
+    """rpar の h_cartesian 計算式の Python 再現"""
+    mm = 29.0 / 65.0
+    rm = mm * 1.0 * 1.2
+    hfm_min = rm / 24.0
+    h0_min = hfm_min * 64.0
+    return h0_min * 24.0 / n
+
+
+def test_snap_inner_radius_satisfies_coordinates_check() -> None:
+    """snap した値が Coordinates patchsystem の半整数倍チェックを通る
+
+    Coordinates/patchsystem.cc:177-179 は
+    ``2*sphere_inner_radius / h_cartesian`` が整数 (誤差 1e-8 以内) であることを
+    要求し、満たさないと CCTK_WARN(0) で MPI_ABORT する。
+    """
+    h_cart = _h_cartesian_for(16)
+    for target in [40.0, 51.0, 70.0, 77.0, 100.0, 120.0]:
+        r = snap_inner_radius(target, n=16)
+        ratio = 2.0 * r / h_cart
+        assert abs(ratio - round(ratio)) < 1e-8, (
+            f"snap({target}) = {r} は h_cart={h_cart} の半整数倍ではない "
+            f"(2*r/h = {ratio}, 整数誤差 {ratio - round(ratio)})"
+        )
+
+
+def test_snap_inner_radius_ceils_up() -> None:
+    """target 以上の最小の有効値が返る"""
+    r = snap_inner_radius(77.0, n=16)
+    assert r >= 77.0, f"snap(77.0) = {r} < 77.0 (ceil でなく floor している)"
+    # 次の有効値 (8 * i*h0 = 68.5...) より大きいこと
+    h_cart = _h_cartesian_for(16)
+    i_h0 = 4 * h_cart  # i = N/4 = 4 for N=16
+    # snap(77) は 9*i_h0 = 77.0954 のはず
+    assert abs(r - 9 * i_h0) < 1e-8
+
+
+def test_snap_inner_radius_default_45_matches_rpar() -> None:
+    """target=45 (rpar の初期値) で rpar 出力 51.40 と一致"""
+    r = snap_inner_radius(45.0, n=16)
+    # rpar: ceil(45/8.5662) * 8.5662 = 6 * 8.5662 = 51.40
+    h_cart = _h_cartesian_for(16)
+    i_h0 = 4 * h_cart
+    assert abs(r - 6 * i_h0) < 1e-8
+
+
+@pytest.mark.parametrize("n", [16, 28])
+def test_snap_inner_radius_works_for_various_n(n: int) -> None:
+    """N=16, N=28 どちらでも整数倍 snap が動く"""
+    h_cart = _h_cartesian_for(n)
+    r = snap_inner_radius(80.0, n=n)
+    ratio = 2.0 * r / h_cart
+    assert abs(ratio - round(ratio)) < 1e-8
