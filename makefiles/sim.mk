@@ -4,8 +4,14 @@
 # 並列度 (SIM_MPI_PROCS / SIM_OMP_THREADS) は **マシン依存**のため
 # ``.env`` で指定する。未設定時は安全寄りのフォールバックを使用。
 
+# 本 Makefile 群は bash 依存 (PIPESTATUS, ${var%%:*} 等) のため bash を明示。
+# Make のデフォルト (/bin/sh = dash on Debian/Ubuntu) だと ``Bad substitution``
+# エラーで exit code が正しく伝播しない。
+SHELL := /bin/bash
+
 # 安全なフォールバック (.env で上書きされる想定)。
-# 本プロジェクトの 16 コア環境では .env.example の推奨値 (8×2) を参照。
+# 推奨値はワークロード依存: qc0 smoke は np=8 × OMP=2 (Phase 3a 検証済)、
+# GW150914 N=28 は np=1 × OMP=16 (Phase 3b Step 1 実測、np>=2 で OOM)。
 SIM_MPI_PROCS   ?= 4
 SIM_OMP_THREADS ?= 1
 
