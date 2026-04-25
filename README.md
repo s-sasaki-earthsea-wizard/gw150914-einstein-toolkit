@@ -177,10 +177,11 @@ make plot
 | 0 | プロジェクト初期化・ドキュメント整備 | ✅ 完了 |
 | 1 | Docker 環境構築 ([#1](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/1)) | ✅ 完了 |
 | 2 | GW150914 パラメータファイル取得・テスト基盤 ([#2](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/2)) | ✅ 完了 |
-| 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | 🚧 進行中 |
-| 3b | GW150914 rpar の grid 改変 (N=16 対応) ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | 未着手 |
-| 3c | GW150914 本番実行 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
-| 4 | 軌道・波形の抽出とプロット ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
+| 3a | qc0-mclachlan.par による ET feasibility 確認 ([#10](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/10)) | ✅ 完了 |
+| 3b-i | N=28 メモリ/時間 feasibility 計測 | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み) |
+| 3b-ii | N=16 対応 rpar grid 改変 ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | 未着手 |
+| 3c | GW150914 本番実行 (N=16) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
+| 4 | 軌道・波形の抽出とプロット + Zenodo N=28 比較 ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
 
 ## 参考資料
@@ -191,6 +192,7 @@ make plot
 - LIGO 解析論文: <http://arxiv.org/abs/1602.03840>
 - GW150914 パラメータファイル:
   <https://bitbucket.org/einsteintoolkit/einsteinexamples/raw/master/par/GW150914/GW150914.rpar>
+- **Zenodo 公式 N=28 診断データ** (Phase 4 比較用): <https://doi.org/10.5281/zenodo.155394>
 
 ## ライセンス
 

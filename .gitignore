@@ -18,6 +18,9 @@
 # Simulation output (fallback directory when SIM_OUTPUT_DIR is not set to host SSD)
 simulations/
 
+# feasibility / sweep ログ (host 側のメモリサンプラ + cactus stdout)
+_logs/
+
 # Python ランタイム生成物
 __pycache__/
 *.py[cod]
