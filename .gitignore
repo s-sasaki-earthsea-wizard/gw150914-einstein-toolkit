@@ -24,6 +24,9 @@ reports/
 # feasibility / sweep ログ (host 側のメモリサンプラ + cactus stdout)
 _logs/
 
+# nohup の host 側 stdout (本番 run 投入時の make 出力、log は _logs/ に別途出る)
+nohup*.out
+
 # Python ランタイム生成物
 __pycache__/
 *.py[cod]
