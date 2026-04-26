@@ -234,6 +234,27 @@ run-gw150914-n16-stage-c: ## Phase 3c-4 Stage C: 1000 → 1700 M (Stage B の ck
 	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
 		STAGE=c STAGE_PAR=$(GW_N16_STAGE_C_PAR) STAGE_TIMEOUT=$(SIM_STAGE_C_TIMEOUT) CONTINUE_FROM=B
 
+# Resume ターゲット群: 単一 stage 内の中断再開専用 (recover_dir = 同 stage の checkpoint_dir).
+# run-* (cross-stage continuity, --continue-from 付き) と区別する。
+# 中断 (timeout / OOM / 手動 kill) 後に再投入する場合は必ずこちらを使う:
+#   run-gw150914-n16-stage-b は --continue-from A を渡すため Stage A の ckpt から
+#   再起動してしまい、中断時点までの evolve がすべてやり直しになる。
+
+.PHONY: resume-gw150914-n16-stage-a
+resume-gw150914-n16-stage-a: ## Phase 3c-2 Stage A 中断再開: 同 stage の最新 ckpt から復帰
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=a STAGE_PAR=$(GW_N16_STAGE_A_PAR) STAGE_TIMEOUT=$(SIM_STAGE_A_TIMEOUT) CONTINUE_FROM=
+
+.PHONY: resume-gw150914-n16-stage-b
+resume-gw150914-n16-stage-b: ## Phase 3c-3 Stage B 中断再開: 同 stage の最新 ckpt から復帰
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=b STAGE_PAR=$(GW_N16_STAGE_B_PAR) STAGE_TIMEOUT=$(SIM_STAGE_B_TIMEOUT) CONTINUE_FROM=
+
+.PHONY: resume-gw150914-n16-stage-c
+resume-gw150914-n16-stage-c: ## Phase 3c-4 Stage C 中断再開: 同 stage の最新 ckpt から復帰
+	@$(MAKE) --no-print-directory _run-gw150914-n16-stage \
+		STAGE=c STAGE_PAR=$(GW_N16_STAGE_C_PAR) STAGE_TIMEOUT=$(SIM_STAGE_C_TIMEOUT) CONTINUE_FROM=
+
 # 内部実装: stage 共通の実行ロジック (parfile 生成 + mpirun + メモリログ)
 .PHONY: _run-gw150914-n16-stage
 _run-gw150914-n16-stage:
