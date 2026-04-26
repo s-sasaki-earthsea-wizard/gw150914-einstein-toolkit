@@ -206,18 +206,56 @@ make test-short       # コンテナ内で Level 1+2
 make test-all         # 全テスト
 ```
 
-### シミュレーション実行
+### Phase 3c-2/3/4 staged production run
 
-Phase 3（本番実行）までの整備完了後、ここに手順を追記する。
-暫定的な想定は以下のとおり:
+物理時間ベースで 0 → 100 / 1000 / 1700 M を 3 stage に分けて
+段階実行する。各 stage 終了後に Zenodo N=28 リファレンスと比較し
+go/no-go を判定する設計 ([Issue #3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3))。
 
 ```bash
-# GW150914 パラメータファイルで低解像度実行（予定）
-make simulate N=16
+# Stage A: 0 → 100 M (clean start, ~6.6 h)
+make run-gw150914-n16-stage-a
 
-# 軌道・波形のプロット（予定）
-make plot
+# Stage B: 100 → 1000 M (Stage A の ckpt から継続、累計 ~2.7 d)
+make run-gw150914-n16-stage-b
+
+# Stage C: 1000 → 1700 M (Stage B の ckpt から継続、累計 ~4.7 d, optional)
+make run-gw150914-n16-stage-c
 ```
+
+#### 中断後の再開
+
+walltime / OOM / 手動 kill いずれの理由で中断した場合、**`run-*` ではなく
+`resume-*` を使う**。`run-*` は cross-stage continuity 用で `--continue-from`
+を渡すため、中断時点ではなく前 stage の最終 ckpt から再起動してしまう
+(Phase 3c-3 で実際に踏んだ事故)。
+
+```bash
+# 例: Stage B が中断した → 同 stage の最新 ckpt から再開
+make resume-gw150914-n16-stage-b
+```
+
+`resume-*` は `--continue-from` を渡さず parfile generator を呼び、
+`IO::recover_dir` を自 stage の `checkpoint_dir` に向ける。
+`IO::recover = "autoprobe"` により、`${SIM_CHECKPOINT_DIR}/<stage>/`
+配下の最新 checkpoint から自動復帰する。
+
+#### 二重起動防止 pre-check
+
+`run-*` / `resume-*` 起動時に、コンテナ内で別の `cactus_sim` が動作中
+でないかを pre-check で検査し、検出時は abort する (Phase 3c-3 で
+誤って `nohup make ... &` を 2 度叩いて並行起動した事故への対策)。
+意図せず動作中の場合は以下で kill してから再投入する:
+
+```bash
+docker exec gw150914-et pkill -KILL -f cactus_sim
+```
+
+### Phase 4: 解析・可視化
+
+Phase 3 完了後の解析パイプラインは Phase 4 で整備する
+([Issue #4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4))。
+Stage A 比較は `make compare-stage-a` で実行可能。
 
 ## 進捗状況
 
