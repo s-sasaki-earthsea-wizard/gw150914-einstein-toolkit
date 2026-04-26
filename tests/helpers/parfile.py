@@ -35,6 +35,7 @@ def generate_par(
     walltime_hours: float = 0.5,
     overrides: dict[str, Any] | None = None,
     maxrls: int | None = None,
+    enable_constraint_output: bool = False,
 ) -> Path:
     """rpar のプレースホルダを置換して実行し、.par を生成する
 
@@ -47,6 +48,10 @@ def generate_par(
         maxrls: 指定すると rpar ソースの ``maxrls = 9`` を上書きし、
             ``rlsp / rlsm`` を ``maxrls - 2`` で cap する（Issue #9 対応）。
             ``None`` (デフォルト) なら原本通り。
+        enable_constraint_output: True で ``patch_constraint_outputs`` を適用し、
+            ``ML_ADMConstraints::ML_Ham`` / ``ML_mom`` を ``IOScalar::outScalar_vars``
+            に追加し、reductions に ``norm2`` / ``norm_inf`` を加える
+            (Issue #4 D3, self-consistency 検証用)。
 
     Returns:
         生成された .par ファイルの絶対パス
@@ -69,6 +74,9 @@ def generate_par(
 
     if maxrls is not None:
         substituted = patch_maxrls(substituted, maxrls)
+
+    if enable_constraint_output:
+        substituted = patch_constraint_outputs(substituted)
 
     # rpar 内の sys.argv[0] から .par の出力名が決まるため
     # ファイル名は {simulation_name}.rpar にする
@@ -156,6 +164,67 @@ def patch_maxrls(rpar_text: str, maxrls: int) -> str:
     )
     if n_sub != 1:
         raise ValueError("rpar 内の `rlsp = int(round(rlsp))` 行が見つかりません")
+
+    return text
+
+
+def patch_constraint_outputs(rpar_text: str) -> str:
+    """rpar の ``IOScalar`` 出力に Hamiltonian / Momentum constraint norm を追加する
+
+    Phase 4 self-consistency 検証 (Issue #4 D3) のため、各 stage run で
+    constraint violation の時間履歴を ASCII で取得する必要がある。公式 rpar
+    は ``IOScalar::outScalar_vars`` に ``SystemStatistics::process_memory_mb``
+    のみを指定し、reductions は ``"minimum maximum average"`` のため、
+    constraint の L2 / L∞ ノルム時間進化が取得できない。
+
+    本関数は rpar コピーに対し以下を実施する:
+      1. ``IOScalar::outScalar_reductions`` に ``norm2`` / ``norm_inf`` を追加
+      2. ``IOScalar::outScalar_vars`` を multi-line にし、
+         ``ML_ADMConstraints::ML_Ham`` / ``ML_ADMConstraints::ML_mom`` を追加
+
+    ``ML_ADMConstraints`` thorn は rpar 原本で既に ``ActiveThorns`` に
+    含まれている (line 201) ため、追加 thorn の起動は不要。
+
+    Args:
+        rpar_text: 既にプレースホルダ置換済みの rpar Python ソース全文
+
+    Returns:
+        パッチを当てた rpar ソース全文
+
+    Raises:
+        ValueError: 期待する rpar 内の行が見つからない場合
+    """
+    text, n_sub = re.subn(
+        r'^(IOScalar::outScalar_reductions\s*=\s*)"minimum maximum average"',
+        r'\1"minimum maximum average norm2 norm_inf"',
+        rpar_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if n_sub != 1:
+        raise ValueError(
+            "rpar 内の `IOScalar::outScalar_reductions = \"minimum maximum average\"` 行が"
+            "見つかりません。原本が変更された可能性があります"
+        )
+
+    text, n_sub = re.subn(
+        r'^(IOScalar::outScalar_vars\s*=\s*)"SystemStatistics::process_memory_mb"',
+        (
+            r'\1"\n'
+            r"  SystemStatistics::process_memory_mb\n"
+            r"  ML_ADMConstraints::ML_Ham\n"
+            r"  ML_ADMConstraints::ML_mom\n"
+            r'"'
+        ),
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if n_sub != 1:
+        raise ValueError(
+            "rpar 内の `IOScalar::outScalar_vars = \"SystemStatistics::process_memory_mb\"`"
+            " 行が見つかりません"
+        )
 
     return text
 
