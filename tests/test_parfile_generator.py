@@ -588,6 +588,55 @@ def test_stage_continue_from_none_uses_self_dir(tmp_path) -> None:
     assert overrides["IO::recover_dir"] == overrides["IO::checkpoint_dir"]
 
 
+@pytest.mark.parametrize("stage", ["A", "B", "C"])
+def test_stage_self_resume_par_recover_dir_matches_checkpoint_dir(
+    tmp_path, stage: str
+) -> None:
+    """生成 parfile で IO::recover_dir == IO::checkpoint_dir (= 同 stage resume)
+
+    Phase 3c-3 で踏んだ事故対策: ``--continue-from`` 省略時に
+    生成 parfile レベルでも自 stage の checkpoint_dir に向くことを保証する。
+    """
+    content = _build_stage_par(tmp_path, stage)
+    sim_name = f"test-stage-{stage.lower()}"
+    expected = f'"../checkpoints/{sim_name}"'
+    assert (
+        f"IO::checkpoint_dir                          = {expected}" in content
+    )
+    assert (
+        f"IO::recover_dir                             = {expected}" in content
+    )
+
+
+def test_stage_continue_from_par_separates_dirs(tmp_path) -> None:
+    """--continue-from 指定時の生成 parfile で recover_dir != checkpoint_dir
+
+    cross-stage continuity: Stage B 起動時 ``--continue-from A`` なら
+    recover_dir = Stage A の ckpt dir、checkpoint_dir = Stage B の ckpt dir
+    に分離する (Stage A の ckpt が誤って上書きされない)。
+    """
+    sim_name = "test-stage-b"
+    overrides = stage_overrides("B", sim_name, continue_from="A")
+    overrides["Coordinates::sphere_inner_radius"] = snap_inner_radius(77.14, n=16)
+    par = generate_par(
+        tmp_path,
+        n=16,
+        simulation_name=sim_name,
+        walltime_hours=8.0,
+        overrides=overrides,
+        enable_constraint_output=True,
+    )
+    content = par.read_text(encoding="utf-8")
+    assert (
+        f'IO::checkpoint_dir                          = "../checkpoints/{sim_name}"'
+        in content
+    )
+    assert (
+        'IO::recover_dir                             = "../checkpoints/gw150914-n16-stage-a"'
+        in content
+    )
+
+
 def test_stage_continue_from_rejects_self() -> None:
     """continue_from が自 stage と同じならエラー (= 自分から recover は意味なし)"""
     with pytest.raises(ValueError, match="同じ"):
