@@ -79,10 +79,11 @@ class TestZenodoReader:
         assert abs(im_arr[0]) < 1e-3
 
     def test_invalid_ah_index_raises(self, zenodo_base: Path) -> None:
+        # ah_index = 1 / 2 / 3 は valid (3 = common horizon、Stage B 以降で使用)
         with pytest.raises(ValueError):
             load_zenodo_n28.load_bh_diagnostics(zenodo_base, ah_index=0)
         with pytest.raises(ValueError):
-            load_zenodo_n28.load_bh_diagnostics(zenodo_base, ah_index=3)
+            load_zenodo_n28.load_bh_diagnostics(zenodo_base, ah_index=4)
 
     def test_missing_sim_dir_raises(self) -> None:
         with pytest.raises(FileNotFoundError):
