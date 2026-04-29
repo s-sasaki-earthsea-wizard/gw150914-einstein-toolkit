@@ -31,13 +31,28 @@ QLM_IRR_MASS = 27      # 1-based col 28 = qlm_irreducible_mass[0]
 QLM_SPIN = 45          # 1-based col 46 = qlm_spin[0]  (J, dimensional)
 QLM_MASS = 66          # 1-based col 67 = qlm_mass[0]  (= horizon mass)
 
-# BH_diagnostics.ah[12].gp 列インデックス (Python 0-based)
+# BH_diagnostics.ah[123].gp 列インデックス (Python 0-based)
 BH_TIME_COL = 1            # 1-based col 2 = cctk_time
 BH_CENTROID_X_COL = 2      # 1-based col 3 = centroid_x
 BH_CENTROID_Y_COL = 3      # 1-based col 4 = centroid_y
 BH_CENTROID_Z_COL = 4      # 1-based col 5 = centroid_z
 BH_M_IRREDUCIBLE_COL = 26  # 1-based col 27 = m_irreducible
 BH_AREAL_RADIUS_COL = 27   # 1-based col 28 = areal_radius
+
+# puncturetracker-pt_loc..asc 列インデックス (Python 0-based, GW150914.rpar 仕様)
+# CarpetIOASCII 0D format で col 8 = cctk_time、col 9 以降が pt_loc グループ。
+# pt_loc は 4 BH × {x, y, z} = 12 components で、x[0..3] → y[0..3] → z[0..3] の順:
+#   col 22 = pt_loc_x[0] (BH1.x)、col 23 = pt_loc_x[1] (BH2.x)
+#   col 32 = pt_loc_y[0] (BH1.y)、col 33 = pt_loc_y[1] (BH2.y)
+#   col 42 = pt_loc_z[0] (BH1.z)、col 43 = pt_loc_z[1] (BH2.z)
+# (BH3, BH4 = unused、初期値 0 のまま)
+PT_TIME_COL = 8
+PT_BH1_X_COL = 22
+PT_BH2_X_COL = 23
+PT_BH1_Y_COL = 32
+PT_BH2_Y_COL = 33
+PT_BH1_Z_COL = 42
+PT_BH2_Z_COL = 43
 
 PSI4_KEY_PATTERN = re.compile(r"l(-?\d+)_m(-?\d+)_r(\d+(?:\.\d+)?)")
 
@@ -137,11 +152,13 @@ def _concat(arrays: Iterable[np.ndarray]) -> np.ndarray:
 
 
 def load_bh_diagnostics(sim_dir: Path | str, ah_index: int) -> np.ndarray:
-    """``BH_diagnostics.ah{1,2}.gp`` を全 segment から読み込み concat.
+    """``BH_diagnostics.ah{1,2,3}.gp`` を全 segment から読み込み concat.
 
     Args:
         sim_dir: simulation ルート。
-        ah_index: 1 または 2 (BH1 / BH2)。
+        ah_index: 1 / 2 / 3 (BH1 / BH2 / common horizon)。
+            ah3 (common) は merger 後にのみ存在し、segment によっては
+            ファイルが無い (= empty array)。
 
     Returns:
         ``(N_t, 40)`` 程度の 2D array。1 列目 = cctk_iteration、
@@ -151,8 +168,8 @@ def load_bh_diagnostics(sim_dir: Path | str, ah_index: int) -> np.ndarray:
         ValueError: ``ah_index`` が不正、または segment が 1 つも見つからない場合。
         FileNotFoundError: ``sim_dir`` が存在しない場合。
     """
-    if ah_index not in (1, 2):
-        raise ValueError(f"ah_index must be 1 or 2, got {ah_index}")
+    if ah_index not in (1, 2, 3):
+        raise ValueError(f"ah_index must be 1, 2, or 3, got {ah_index}")
     segments = find_segments(sim_dir)
     if not segments:
         raise ValueError(f"no segments found under {sim_dir}")
@@ -185,6 +202,32 @@ def load_qlm_scalars(sim_dir: Path | str) -> np.ndarray:
     arrays: list[np.ndarray] = []
     for seg in segments:
         path = seg / "quasilocalmeasures-qlm_scalars..asc"
+        if not path.exists():
+            continue
+        a = np.loadtxt(path, comments="#")
+        if a.ndim == 1:
+            a = a[np.newaxis, :]
+        arrays.append(a)
+    out = _concat(arrays)
+    return _dedup_by_first_col(out) if out.size else out
+
+
+def load_puncture_tracker(sim_dir: Path | str) -> np.ndarray:
+    """``puncturetracker-pt_loc..asc`` を全 segment から読み込み concat.
+
+    軌道角・軌道数の計算に使う (BH centroid と違い puncture は merger 直前まで
+    連続 track 可能で、AHFinder の出力頻度に影響されない)。
+
+    Returns:
+        ``(N_t, 52)`` の 2D array。列インデックスはモジュール定数
+        ``PT_*_COL`` 参照。空の場合は ``(0, 0)``。
+    """
+    segments = find_segments(sim_dir)
+    if not segments:
+        raise ValueError(f"no segments found under {sim_dir}")
+    arrays: list[np.ndarray] = []
+    for seg in segments:
+        path = seg / "puncturetracker-pt_loc..asc"
         if not path.exists():
             continue
         a = np.loadtxt(path, comments="#")

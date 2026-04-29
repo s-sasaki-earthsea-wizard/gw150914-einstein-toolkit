@@ -38,6 +38,12 @@ from . import _simdir, load_simulation, load_zenodo_n28
 TARGET_TIME_M = 100.0
 PSI4_DEFAULT_RADIUS = 100.0
 
+# 補間 target が t_max を上回る場合のスナップ許容差 [M]。
+# Cactus の ASCII 出力頻度の都合で、シミュレーション自体は t_target に到達して
+# いても ASCII 最終サンプルが少し手前に止まることがある (Stage A 実測: 100.013 M
+# 完走 / ASCII 最終 99.26 M)。許容差以内なら t_max にスナップして比較する。
+TARGET_TIME_SNAP_TOLERANCE_M = 1.0
+
 
 # ----------------------------------------------------------------------------
 # 閾値定義 (docs/comparison_method_n16_vs_n28.md と同期)
@@ -57,7 +63,9 @@ class Thresholds:
 
     # ψ4
     psi4_phase_rad: float = 0.5  # ±0.5 rad
-    psi4_amplitude_pct: float = 50.0  # ±50% 暫定 (overall_pass 不参入)
+    # ±25%: Stage A 実 N=16 vs Zenodo で |Δ| = 14.24% を観測 (2026-04-30)。
+    # 実測の倍弱で安全余裕を確保。Stage B 後に確定する予定 (provisional 維持)。
+    psi4_amplitude_pct: float = 25.0
 
     # self-consistency (N=16 単体)
     m_irreducible_drift_pct: float = 1.0
@@ -73,11 +81,24 @@ PROVISIONAL_CHECKS: frozenset[str] = frozenset({"psi4_22_amplitude"})
 # ----------------------------------------------------------------------------
 # Reference 値抽出ユーティリティ
 # ----------------------------------------------------------------------------
-def _interp_or_nan(t_arr: np.ndarray, y_arr: np.ndarray, t_target: float) -> float:
-    """``t_target`` が ``t_arr`` の範囲内なら線形補間、外なら NaN."""
+def _interp_or_nan(
+    t_arr: np.ndarray,
+    y_arr: np.ndarray,
+    t_target: float,
+    snap_tolerance_M: float = TARGET_TIME_SNAP_TOLERANCE_M,
+) -> float:
+    """``t_target`` が ``t_arr`` の範囲内なら線形補間、外なら NaN.
+
+    ASCII 出力頻度の都合で t_target が t_arr 末尾を僅かに超える場合は、
+    ``snap_tolerance_M`` 以内なら t_arr 末尾の値にスナップする。
+    """
     if t_arr.size == 0:
         return float("nan")
-    if t_target < t_arr[0] - 1e-9 or t_target > t_arr[-1] + 1e-9:
+    if t_target < t_arr[0] - 1e-9:
+        return float("nan")
+    if t_target > t_arr[-1] + 1e-9:
+        if t_target <= t_arr[-1] + snap_tolerance_M:
+            return float(y_arr[-1])
         return float("nan")
     return float(np.interp(t_target, t_arr, y_arr))
 
@@ -247,10 +268,14 @@ def evaluate_checks(
     """
     checks: dict[str, dict[str, Any]] = {}
 
-    # 完走判定: n16 が t_target まで届いているか (ah1 の最終時刻で判定)
+    # 完走判定: n16 が t_target まで届いているか (ah1 の最終時刻で判定)。
+    # ASCII 出力頻度の都合で実 simulation が target を超えていても最終サンプル
+    # が手前に来るケースを許容するため TARGET_TIME_SNAP_TOLERANCE_M 分の猶予
+    # を持たせる。
     n16_t_max = n16["time_range"][1]
     completion_pass = (
-        not math.isnan(n16_t_max) and n16_t_max >= target_time_M - 1e-6
+        not math.isnan(n16_t_max)
+        and n16_t_max >= target_time_M - TARGET_TIME_SNAP_TOLERANCE_M
     )
     checks["completion"] = {
         "pass": completion_pass,
