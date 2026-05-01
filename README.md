@@ -219,7 +219,7 @@ make run-gw150914-n16-stage-a
 # Stage B: 100 → 1000 M (Stage A の ckpt から継続、累計 ~2.7 d)
 make run-gw150914-n16-stage-b
 
-# Stage C: 1000 → 1700 M (Stage B の ckpt から継続、累計 ~4.7 d, optional)
+# Stage C: 1000 → 1700 M (Stage B の ckpt から継続、~27.9 h)
 make run-gw150914-n16-stage-c
 ```
 
@@ -253,9 +253,24 @@ docker exec gw150914-et pkill -KILL -f cactus_sim
 
 ### Phase 4: 解析・可視化
 
-Phase 3 完了後の解析パイプラインは Phase 4 で整備する
+Stage A/B/C それぞれの完走後に Zenodo N=28 reference との比較を実行できる
 ([Issue #4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4))。
-Stage A 比較は `make compare-stage-a` で実行可能。
+Stage C 比較は Stage A+B+C を連結して full simulation 比較も兼ねる。
+
+```bash
+# Stage A 比較 (t=100 M スナップショット)
+make compare-stage-a
+
+# Stage B 比較 (t=1000 M, merger + ringdown 早期)
+make compare-stage-b
+
+# Stage C 比較 (t=1700 M, full inspiral + merger + ringdown + ψ4 peak)
+# = Stage A+B+C 連結データで full simulation 比較
+make compare-stage-c
+```
+
+各ターゲットは pass/fail JSON + 6〜9 種類の overlay plot を `reports/stage_{a,b,c}/`
+配下に出力する。Docker 不要のホスト実行版 (`compare-stage-{a,b,c}-host`) もある。
 
 ## 進捗状況
 
@@ -268,10 +283,10 @@ Stage A 比較は `make compare-stage-a` で実行可能。
 | 3b-i | N=28 メモリ/時間 feasibility 計測 | ✅ 完了 (np=1 OMP=16 で 50 GiB / 16 日見込み) |
 | 3b-ii | N=16 対応 rpar grid 改変 ([#9](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/9)) | ✅ 完了 (sphere_inner_radius 拡大で 1.84 sec/iter, 21 GiB, ringdown ~5.7 日見込み) |
 | 3c-1 | checkpoint write/restart 動作確認 ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | ✅ 完了 (np=1 で POSIX lock 不発、walltime+terminate 両経路 + recover 成功、steady-state 0.89 sec/iter) |
-| 3c-2 | Stage A run (0 → 100 M, 6.6h) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
-| 3c-3 | Stage B run (100 → 1000 M, +2.7 日) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
-| 3c-4 | Stage C run (1000 → 1700 M, +4.7 日, optional) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | 未着手 |
-| 4 | 軌道・波形の抽出とプロット + Zenodo N=28 比較 ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | 未着手 |
+| 3c-2 | Stage A run (0 → 100 M, 6.6h) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | ✅ 完了 (6h51m, 100.013 M, peak 26.91 GiB) |
+| 3c-3 | Stage B run (100 → 1000 M, +2.7 日) ([#21](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/21)) | ✅ 完了 (49h39m, 1000.01 M, peak 28.76 GiB) |
+| 3c-4 | Stage C run (1000 → 1700 M, +27.9h) ([#3](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/3)) | ✅ 完了 (27h54m, 1700.01 M, peak 22.79 GiB) |
+| 4 | 軌道・波形の抽出とプロット + Zenodo N=28 比較 ([#4](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/4)) | ✅ 完了 (Stage A/B/C 全 overall_pass=True、ψ4 peak amplitude -1.79% / peak time -0.28 M) |
 | 5 | 3D 可視化（オプション, [#5](https://github.com/s-sasaki-earthsea-wizard/gw150914-einstein-toolkit/issues/5)) | 未着手 |
 
 ## 参考資料
