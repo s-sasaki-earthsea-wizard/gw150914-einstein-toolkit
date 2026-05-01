@@ -26,6 +26,16 @@ STAGE_B_JSON       := $(STAGE_B_OUTPUT_DIR)/pass_fail.json
 STAGE_B_PLOT_DIR   := $(STAGE_B_OUTPUT_DIR)/plots
 SIM_N16_STAGE_B_DIR ?= simulations/gw150914-n16-stage-b
 
+STAGE_C_OUTPUT_DIR ?= reports/stage_c
+STAGE_C_JSON       := $(STAGE_C_OUTPUT_DIR)/pass_fail.json
+STAGE_C_PLOT_DIR   := $(STAGE_C_OUTPUT_DIR)/plots
+SIM_N16_STAGE_A_DIR ?= simulations/gw150914-n16-stage-a
+SIM_N16_STAGE_C_DIR ?= simulations/gw150914-n16-stage-c
+
+# Stage C 比較は merger event を含む完全な時系列が必要なため、
+# Stage A + B + C を順に並べて連結 reader に渡す。
+SIM_N16_FULL_DIRS  ?= $(SIM_N16_STAGE_A_DIR) $(SIM_N16_STAGE_B_DIR) $(SIM_N16_STAGE_C_DIR)
+
 .PHONY: compare-stage-a
 compare-stage-a: ## Stage A (t=100 M) 比較: 自前 N=16 vs Zenodo N=28、JSON + plot 出力
 	@if [ ! -d "$(SIM_N16_DIR)" ]; then \
@@ -103,3 +113,47 @@ compare-stage-b-sanity: ## Sanity check: Zenodo を両側に渡して全 pass �
 	  --n28-dir "$(ZENODO_N28_SIMDIR)" \
 	  --output "$(STAGE_B_OUTPUT_DIR)/sanity_pass_fail.json" \
 	  --plot-dir "$(STAGE_B_OUTPUT_DIR)/sanity_plots"
+
+# ---------------------------------------------------------------------------
+# Stage C 比較 (Phase 4 / Issue #4 タスク F): full simulation A+B+C 連結
+# ---------------------------------------------------------------------------
+.PHONY: compare-stage-c
+compare-stage-c: ## Stage C (1700 M) 比較: A+B+C 連結 vs Zenodo / ψ4 peak / ringdown 拡張
+	@for d in $(SIM_N16_FULL_DIRS); do \
+	  if [ ! -d "$$d" ]; then \
+	    echo "ERROR: N=16 simulation dir not found: $$d" >&2; \
+	    echo "       Stage A/B/C 全てを完走させてください" >&2; \
+	    exit 1; \
+	  fi; \
+	done
+	@if [ ! -d "$(ZENODO_N28_SIMDIR)" ]; then \
+	  echo "ERROR: Zenodo N=28 simdir not found: $(ZENODO_N28_SIMDIR)" >&2; \
+	  exit 1; \
+	fi
+	$(COMPOSE) exec et python3 -m scripts.analyze.compare_stage_c \
+	  --n16-dirs $(SIM_N16_FULL_DIRS) \
+	  --n28-dir "$(ZENODO_N28_SIMDIR)" \
+	  --output "$(STAGE_C_JSON)" \
+	  --plot-dir "$(STAGE_C_PLOT_DIR)"
+
+.PHONY: compare-stage-c-host
+compare-stage-c-host: ## Stage C 比較をホスト側 python で実行 (Docker 不要)
+	@for d in $(SIM_N16_FULL_DIRS); do \
+	  if [ ! -d "$$d" ]; then \
+	    echo "ERROR: N=16 simulation dir not found: $$d" >&2; \
+	    exit 1; \
+	  fi; \
+	done
+	python3 -m scripts.analyze.compare_stage_c \
+	  --n16-dirs $(SIM_N16_FULL_DIRS) \
+	  --n28-dir "$(ZENODO_N28_SIMDIR)" \
+	  --output "$(STAGE_C_JSON)" \
+	  --plot-dir "$(STAGE_C_PLOT_DIR)"
+
+.PHONY: compare-stage-c-sanity
+compare-stage-c-sanity: ## Sanity check: Zenodo を両側に渡して全 pass を確認 (host)
+	python3 -m scripts.analyze.compare_stage_c \
+	  --n16-dirs "$(ZENODO_N28_SIMDIR)" \
+	  --n28-dir "$(ZENODO_N28_SIMDIR)" \
+	  --output "$(STAGE_C_OUTPUT_DIR)/sanity_pass_fail.json" \
+	  --plot-dir "$(STAGE_C_OUTPUT_DIR)/sanity_plots"

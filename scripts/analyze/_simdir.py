@@ -19,11 +19,16 @@ checkpoint からの restart で重複しうるため defensive に対応)。
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Union
 
 import h5py
 import numpy as np
+
+# 単一 simulation の指定方法と「複数 sim_dir 連結」(Stage A+B+C など) を
+# 共通のローダ API で扱うための型エイリアス。
+SimDir = Union[Path, str, Sequence[Union[Path, str]]]
 
 # QLM 0D ASCII 列インデックス (Python 0-based; inspect_zenodo.py と同期)
 QLM_TIME_COL = 8       # 1-based col 9 = time
@@ -65,18 +70,21 @@ _FLAT_SIMDIR_MARKERS = (
 )
 
 
-def find_segments(sim_dir: Path | str) -> list[Path]:
+def find_segments(sim_dir: SimDir) -> list[Path]:
     """``sim_dir`` 配下の segment 内側ディレクトリ一覧を返す.
 
-    2 種類のレイアウトに対応する:
+    3 種類の入力に対応する:
 
     1. **SimFactory 多 segment レイアウト** (Zenodo N=28 など):
        ``<sim_dir>/output-NNNN/<sim_name>/...`` — walltime restart の
        segment 単位で並ぶ
     2. **単一 Cactus run の flat レイアウト** (Phase 3c-2/3/4 自前 N=16):
        ``<sim_dir>/...`` — 直下に出力ファイルが並ぶ
+    3. **複数 sim_dir のシーケンス** (Stage A + B + C を連結する場合):
+       各要素について上記いずれかの判定を行い、segment リストを順に concat
+       する。重複 iteration は下流の dedup で除去される。
 
-    後者は ``output-*`` サブディレクトリが存在せず、かつ
+    後者 (flat layout) は ``output-*`` サブディレクトリが存在せず、かつ
     ``mp_psi4.h5`` / ``quasilocalmeasures-qlm_scalars..asc`` /
     ``BH_diagnostics.ah1.gp`` のいずれかが直下に存在する場合に
     「単一 virtual segment」として ``[sim_dir]`` を返す。
@@ -84,14 +92,22 @@ def find_segments(sim_dir: Path | str) -> list[Path]:
     Args:
         sim_dir: simulation ルート (e.g. ``data/.../GW150914_28``,
             ``~/gw150914-output/gw150914-n16-stage-a``)。
+            複数 sim_dir をシーケンスで渡すと segment を順に concat。
 
     Returns:
         ``output-NNNN`` 順に sort された segment 内側のパスのリスト。
         flat layout の場合は ``[sim_dir]``。空の場合は空リスト。
+        シーケンス入力時は要素順を保ったまま全 segment を flatten。
 
     Raises:
-        FileNotFoundError: ``sim_dir`` が存在しない場合。
+        FileNotFoundError: ``sim_dir`` (もしくは要素のいずれか) が存在しない場合。
     """
+    # シーケンス入力 (Stage A+B+C など) は再帰的に各要素を処理して concat。
+    if not isinstance(sim_dir, (str, Path)):
+        out: list[Path] = []
+        for d in sim_dir:
+            out.extend(find_segments(d))
+        return out
     sim_dir = Path(sim_dir)
     if not sim_dir.is_dir():
         raise FileNotFoundError(f"sim_dir not found: {sim_dir}")
@@ -151,7 +167,7 @@ def _concat(arrays: Iterable[np.ndarray]) -> np.ndarray:
     return np.concatenate(arrays, axis=0)
 
 
-def load_bh_diagnostics(sim_dir: Path | str, ah_index: int) -> np.ndarray:
+def load_bh_diagnostics(sim_dir: SimDir, ah_index: int) -> np.ndarray:
     """``BH_diagnostics.ah{1,2,3}.gp`` を全 segment から読み込み concat.
 
     Args:
@@ -186,7 +202,7 @@ def load_bh_diagnostics(sim_dir: Path | str, ah_index: int) -> np.ndarray:
     return _dedup_by_first_col(out) if out.size else out
 
 
-def load_qlm_scalars(sim_dir: Path | str) -> np.ndarray:
+def load_qlm_scalars(sim_dir: SimDir) -> np.ndarray:
     """``quasilocalmeasures-qlm_scalars..asc`` を全 segment から読み込み concat.
 
     各行は 1 iteration の 0D 出力。列インデックスはモジュール定数
@@ -212,7 +228,7 @@ def load_qlm_scalars(sim_dir: Path | str) -> np.ndarray:
     return _dedup_by_first_col(out) if out.size else out
 
 
-def load_puncture_tracker(sim_dir: Path | str) -> np.ndarray:
+def load_puncture_tracker(sim_dir: SimDir) -> np.ndarray:
     """``puncturetracker-pt_loc..asc`` を全 segment から読み込み concat.
 
     軌道角・軌道数の計算に使う (BH centroid と違い puncture は merger 直前まで
@@ -251,7 +267,7 @@ def chi_dimensionless(j: np.ndarray | float, m_horizon: np.ndarray | float) -> n
 
 
 def load_psi4_mode(
-    sim_dir: Path | str,
+    sim_dir: SimDir,
     l: int,
     m: int,
     r: float,
@@ -315,7 +331,7 @@ def _psi4_key_matches(key: str, l: int, m: int, r: float, rtol: float = 1e-3) ->
     )
 
 
-def list_psi4_radii(sim_dir: Path | str, l: int = 2, m: int = 2) -> list[float]:
+def list_psi4_radii(sim_dir: SimDir, l: int = 2, m: int = 2) -> list[float]:
     """指定 (l, m) で利用可能な抽出半径一覧 (sort 済み)."""
     segments = find_segments(sim_dir)
     if not segments:
