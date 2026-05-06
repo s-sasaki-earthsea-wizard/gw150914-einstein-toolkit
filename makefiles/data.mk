@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 # 外部データ取得ターゲット
 # =======================================================
 # Einstein Toolkit 公式の GW150914 パラメータファイル等、

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Phase 4 Stage B 比較ロジックのユニットテスト (Issue #4 タスク E).
 
 スコープ:

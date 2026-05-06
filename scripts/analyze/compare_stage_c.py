@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Stage C (0 → 1700 M) 比較スクリプト (Phase 4 / Issue #4 タスク F).
 
 自前 N=16 run (Stage A + B + C 連結) と Zenodo N=28 reference を比較する。

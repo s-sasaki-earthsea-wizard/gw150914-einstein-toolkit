@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """GW150914 feasibility smoke parfile 生成スクリプト (Phase 3b, N=28 メモリ計測用).
 
 GW150914.rpar を N=28 で展開し、以下の overrides を適用して

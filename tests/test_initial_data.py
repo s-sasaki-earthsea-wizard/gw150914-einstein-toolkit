@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Level 2: cactus_sim で初期データ生成までを短時間実行するテスト
 
 目的:

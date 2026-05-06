@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """qc0-mclachlan smoke parfile 生成スクリプト (Phase 3a feasibility 用).
 
 公式 qc0-mclachlan.par に以下の overrides を適用して

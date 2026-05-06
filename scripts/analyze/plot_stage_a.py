@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Stage A 時系列重ね描き plot 生成 (Phase 4 / Issue #4 タスク C3 (a) 層).
 
 ``compare_stage_a.py`` から ``--plot-dir`` 指定時に呼ばれる。matplotlib を
