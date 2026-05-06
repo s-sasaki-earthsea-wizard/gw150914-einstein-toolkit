@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """GW150914 N=16 本番 run 用 parfile 生成 (Phase 3c-2/3/4, Issue #3 + #4 D1+D3).
 
 Phase 3c-1 で確立した checkpoint 動作確認構成 (np=1 × OMP=16,

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 # シミュレーション実行ターゲット
 # =======================================================
 # cactus_sim を Docker コンテナ内で MPI 実行する。

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """GW150914 N=16 feasibility parfile 生成スクリプト (Phase 3b-ii, Issue #9).
 
 公式 GW150914.rpar は N=28 前提で grid 構造が固定されており、N<28 で

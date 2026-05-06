@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 # GW150914 Einstein Toolkit ビルドイメージ
 # =================================================================
 # 公式 jupyter-et リポジトリの tutorial-server/base.docker を踏襲し、

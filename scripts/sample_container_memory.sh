@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 # Docker コンテナのメモリ使用量を一定間隔でサンプリングして追記するデーモン.
 #
 # 目的: シミュレーション実行中のコンテナ合計メモリを時系列で記録し、

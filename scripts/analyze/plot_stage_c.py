@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Stage C / 全 stage 連結 (A+B+C) 重ね描き plot 生成 (Phase 4 / Issue #4 タスク F).
 
 ``compare_stage_c.py`` から ``--plot-dir`` 指定時に呼ばれる。

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """cactus_sim サブプロセス実行ラッパ
 
 Level 2 以降のテストで MPI 経由で cactus_sim を呼び出すための薄いヘルパ。

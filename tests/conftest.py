@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """pytest 共通設定とフィクスチャ"""
 
 from __future__ import annotations

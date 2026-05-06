@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """GW150914 N=16 checkpoint 動作確認用 parfile 生成 (Phase 3c-1, Issue #3).
 
 Phase 3a/3b までは HDF5 1.10.4 の POSIX advisory lock 問題を回避するため

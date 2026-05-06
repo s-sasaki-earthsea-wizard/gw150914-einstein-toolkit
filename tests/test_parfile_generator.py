@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Level 1: rpar → par 生成パイプラインの純 Python テスト
 
 cactus_sim を呼び出さないため、Docker 外でも実行可能。

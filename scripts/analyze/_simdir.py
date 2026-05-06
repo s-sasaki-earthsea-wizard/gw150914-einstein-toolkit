@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Cactus / SimFactory 出力の segment 横断 reader (内部共有モジュール).
 
 Zenodo N=28 reference (10.5281/zenodo.155394) と自前 N=16 run は同じ

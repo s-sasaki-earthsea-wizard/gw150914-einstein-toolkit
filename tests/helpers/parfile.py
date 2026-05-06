@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """rpar → par 生成ユーティリティ
 
 GW150914.rpar は Python スクリプトであり、`@N@` / `@SIMULATION_NAME@` /

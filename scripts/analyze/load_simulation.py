@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """自前 N=16 simulation 出力読み込み (Phase 4 / Issue #4 タスク C2).
 
 自前 run の Cactus 出力 (``simulations/<sim_name>/output-NNNN/<sim_name>/``)

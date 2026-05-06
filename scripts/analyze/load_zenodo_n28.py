@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Zenodo N=28 reference データ読み込み (Phase 4 / Issue #4 タスク C1).
 
 GW150914 公式 N=28 シミュレーション結果 (Zenodo 10.5281/zenodo.155394) を

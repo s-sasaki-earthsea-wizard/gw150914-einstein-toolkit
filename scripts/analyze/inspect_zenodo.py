@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 """Zenodo N=28 reference データ構造調査スクリプト (Phase 4 / Issue #4 タスク A1-A3)。
 
 ホスト Python 環境を汚さないため docker 内で実行する想定:

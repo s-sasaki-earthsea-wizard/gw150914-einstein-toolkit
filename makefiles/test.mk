@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Syota Sasaki
 # テスト実行ターゲット
 # =======================================================
 # pytest ベースのユニット/スモークテスト。Level 別に marker で分岐する:
